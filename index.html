@@ -1,0 +1,1407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Annie's 3D Block World!</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Comic Sans MS', 'Marker Felt', system-ui, sans-serif; }
+  html, body { overflow: hidden; background: #87ceeb; }
+  canvas { display: block; }
+
+  #overlay {
+    position: fixed; inset: 0;
+    background: linear-gradient(135deg, rgba(255,61,138,0.92), rgba(106,76,255,0.92));
+    display: flex; flex-direction: column; align-items: center;
+    color: white; z-index: 100; padding: 20px 20px 80px; text-align: center;
+    overflow-y: auto;
+  }
+  #playBar {
+    position: sticky; top: -20px;
+    background: linear-gradient(135deg, #ff3d8a, #6a4cff);
+    width: 100%; padding: 14px 0 10px;
+    z-index: 110; margin: -20px -20px 8px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+    display: flex; justify-content: center;
+  }
+  #overlay h1 {
+    font-size: clamp(26px, 4.5vw, 46px);
+    color: #ffe45c;
+    text-shadow: 3px 3px 0 #333, 6px 6px 0 rgba(0,0,0,0.3);
+    margin-bottom: 4px;
+    letter-spacing: 2px;
+  }
+  #overlay h2 {
+    font-size: 22px; color: #ffe45c; margin: 12px 0 6px;
+    text-shadow: 2px 2px 0 #333;
+  }
+  #overlay h3 { font-size: 20px; margin: 8px 0; }
+  #overlay p { font-size: 16px; margin: 4px; max-width: 720px; line-height: 1.5; }
+  #overlay .controls b { color: #ffe45c; }
+
+  .btn-row {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    justify-content: center; margin: 6px 0 10px;
+    max-width: 900px;
+  }
+  .btn-row button, #playBtn, #micBtn, #addVillagerBtn {
+    background: white; color: #333;
+    border: 3px solid #333; border-radius: 14px;
+    padding: 10px 14px; font-size: 16px; font-weight: bold;
+    cursor: pointer; font-family: inherit;
+    box-shadow: 0 4px 0 #333;
+    transition: transform 0.1s;
+  }
+  .btn-row button:hover, #micBtn:hover, #addVillagerBtn:hover { transform: translateY(-2px); background: #ffe45c; }
+  .btn-row button:active { transform: translateY(2px); box-shadow: 0 1px 0 #333; }
+
+  #micBtn {
+    font-size: 20px; padding: 14px 24px;
+    background: #ff3d8a; color: white;
+    margin: 6px;
+  }
+  #micBtn.listening {
+    background: #ffe45c; color: #333;
+    animation: pulse 0.8s infinite alternate;
+  }
+  @keyframes pulse {
+    from { box-shadow: 0 4px 0 #333; }
+    to   { box-shadow: 0 4px 0 #333, 0 0 30px #ffe45c; }
+  }
+
+  #playBtn {
+    margin-top: 10px;
+    font-size: 26px; padding: 16px 36px;
+    background: #ffe45c; color: #333;
+    box-shadow: 0 6px 0 #333;
+  }
+
+  #winnerUI { margin: 8px 0; }
+  #winnerUI button { background: #ffe45c; }
+
+  #villagerList {
+    display: flex; flex-direction: column; gap: 6px;
+    max-width: 600px; width: 100%;
+    background: rgba(0,0,0,0.25); padding: 10px; border-radius: 12px;
+    max-height: 200px; overflow-y: auto;
+  }
+  .vrow {
+    display: flex; align-items: center; gap: 6px;
+    background: white; color: #333;
+    border-radius: 8px; padding: 6px 10px;
+  }
+  .vrow input[type="text"] {
+    flex: 1; padding: 4px 8px; font-size: 16px;
+    border: 2px solid #888; border-radius: 6px;
+    font-family: inherit;
+  }
+  .vrow input[type="color"] {
+    width: 36px; height: 36px;
+    border: 2px solid #333; border-radius: 6px;
+    cursor: pointer; padding: 0; background: none;
+  }
+  .vrow button {
+    background: #ff3d8a; color: white; border: none;
+    padding: 4px 10px; border-radius: 6px; cursor: pointer;
+    font-family: inherit; font-weight: bold;
+  }
+
+  #crosshair {
+    position: fixed; top: 50%; left: 50%;
+    width: 20px; height: 20px;
+    transform: translate(-50%, -50%);
+    pointer-events: none; z-index: 50;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ''; position: absolute; background: white;
+    box-shadow: 0 0 3px black;
+  }
+  #crosshair::before { left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); }
+  #crosshair::after  { top: 50%; left: 0; right: 0; height: 2px; transform: translateY(-50%); }
+
+  #biome {
+    position: fixed; top: 16px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.55); color: white;
+    padding: 10px 22px; border-radius: 24px;
+    font-size: 22px; font-weight: bold;
+    z-index: 50; pointer-events: none;
+    border: 3px solid white;
+  }
+
+  #status {
+    position: fixed; top: 70px; left: 50%;
+    transform: translateX(-50%);
+    background: #ffe45c; color: #333;
+    padding: 10px 20px; border-radius: 14px;
+    font-size: 18px; font-weight: bold;
+    z-index: 60; opacity: 0; pointer-events: none;
+    transition: opacity 0.3s;
+    border: 3px solid #333;
+    max-width: 80vw; text-align: center;
+  }
+  #status.show { opacity: 1; }
+
+  #hotbar {
+    position: fixed; bottom: 16px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; gap: 4px;
+    background: rgba(0,0,0,0.55);
+    padding: 8px; border-radius: 14px;
+    z-index: 50;
+    border: 3px solid white;
+    max-width: 95vw; overflow-x: auto;
+  }
+  .slot {
+    width: 56px; height: 56px; flex-shrink: 0;
+    border-radius: 10px; border: 3px solid #888;
+    cursor: pointer; position: relative;
+    display: flex; align-items: flex-end; justify-content: center;
+    padding-bottom: 3px;
+    font-size: 10px; color: white; font-weight: bold;
+    text-shadow: 1px 1px 2px black, -1px -1px 2px black;
+    text-align: center; line-height: 1.1;
+  }
+  .slot.active { border-color: #ffe45c; box-shadow: 0 0 16px #ffe45c; transform: scale(1.08); }
+  .slot .key {
+    position: absolute; top: 2px; left: 4px;
+    background: rgba(0,0,0,0.6); padding: 1px 5px;
+    border-radius: 4px; font-size: 10px;
+  }
+
+  #help {
+    position: fixed; top: 16px; right: 16px;
+    background: rgba(0,0,0,0.55); color: white;
+    padding: 10px 14px; border-radius: 12px;
+    font-size: 13px; z-index: 50; line-height: 1.7;
+    pointer-events: none; max-width: 230px;
+    border: 2px solid white;
+  }
+  #help b { color: #ffe45c; }
+</style>
+</head>
+<body>
+
+<div id="overlay">
+  <div id="playBar">
+    <button id="playBtn">▶️ Click here to PLAY!</button>
+  </div>
+  <h1>✨ Annie's 3D Block World ✨</h1>
+  <p>Walk between 6 places, build with friends, and have build battles!</p>
+
+  <h2>🌍 Travel to:</h2>
+  <div class="btn-row" id="teleports">
+    <button data-tp="village">🏘️ Village</button>
+    <button data-tp="snow">❄️ Snow</button>
+    <button data-tp="jungle">🌴 Jungle</button>
+    <button data-tp="desert">🌵 Desert</button>
+    <button data-tp="mountains">⛰️ Mountains</button>
+    <button data-tp="ocean">🌊 Ocean</button>
+    <button data-tp="arena">🏟️ Build Arena!</button>
+  </div>
+
+  <h2>🏟️ Build Battle with Buddy</h2>
+  <p>Pick a challenge! Buddy builds on the <b>ICE pad</b>, you build on the <b>RED pad</b>!</p>
+  <button id="micBtn">🎤 Say a Challenge Out Loud!</button>
+  <div class="btn-row" id="challenges">
+    <button data-build="castle">🏰 Castle</button>
+    <button data-build="house">🏠 House</button>
+    <button data-build="tree">🌳 Tree</button>
+    <button data-build="tower">🗼 Tower</button>
+    <button data-build="pyramid">🔺 Pyramid</button>
+    <button data-build="snowman">⛄ Snowman</button>
+    <button data-build="rocket">🚀 Rocket</button>
+    <button data-build="flower">🌸 Flower</button>
+    <button data-build="bridge">🌉 Bridge</button>
+    <button data-build="igloo">🏕️ Igloo</button>
+    <button data-build="rainbow">🌈 Rainbow</button>
+    <button data-build="car">🚗 Car</button>
+  </div>
+  <div id="winnerUI" style="display:none">
+    <h3>🏆 Who built it best?</h3>
+    <div class="btn-row">
+      <button data-winner="annie">🥇 Annie Wins!</button>
+      <button data-winner="buddy">🥇 Buddy Wins!</button>
+      <button data-winner="tie">🤝 It's a Tie!</button>
+    </div>
+  </div>
+
+  <h2>🧑 Your Villagers</h2>
+  <p>Change their names and hat colors! Click "Add" to make more.</p>
+  <div id="villagerList"></div>
+  <button id="addVillagerBtn">+ Add a New Villager</button>
+
+  <div class="controls" style="margin-top: 12px; font-size: 14px; opacity: 0.9;">
+    <p><b>WASD</b> walk &nbsp;•&nbsp; <b>SPACE</b> fly up &nbsp;•&nbsp; <b>SHIFT</b> down &nbsp;•&nbsp; <b>MOUSE</b> look</p>
+    <p><b>E</b> = BUILD a block 🧱 &nbsp;•&nbsp; <b>Q</b> = BREAK a block 💥 &nbsp;•&nbsp; <b>1-9</b> pick block &nbsp;•&nbsp; <b>ESC</b> menu</p>
+    <p>💡 <b>Click</b> a villager or Buddy to make them TALK! 💬</p>
+  </div>
+</div>
+
+<div id="crosshair"></div>
+<div id="biome">🏘️ Village</div>
+<div id="status"></div>
+<div id="hotbar"></div>
+
+<div id="help">
+  <b>WASD</b> walk<br>
+  <b>SPACE</b> fly up &nbsp; <b>SHIFT</b> down<br>
+  <b>E</b> build 🧱 &nbsp; <b>Q</b> break 💥<br>
+  <b>1-9</b> pick block<br>
+  <b>Click</b> talk to friends 💬<br>
+  <b>ESC</b> menu / arena
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/PointerLockControls.js"></script>
+<script>
+// ===== SCENE / RENDERER =====
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.Fog(0x87ceeb, 45, 130);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 300);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ===== LIGHTS =====
+const sun = new THREE.DirectionalLight(0xfff2cc, 1.0);
+sun.position.set(60, 100, 40);
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+scene.add(new THREE.HemisphereLight(0x87ceeb, 0x55aa33, 0.3));
+
+// ===== CONTROLS =====
+const controls = new THREE.PointerLockControls(camera, document.body);
+scene.add(controls.getObject());
+const overlay = document.getElementById('overlay');
+document.getElementById('playBtn').onclick = () => controls.lock();
+controls.addEventListener('lock',   () => overlay.style.display = 'none');
+controls.addEventListener('unlock', () => { overlay.style.display = 'flex'; renderVillagerList(); });
+document.addEventListener('pointerlockerror', () => {
+  showStatus("Click the Play button again — give me a sec!", 3000);
+});
+
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code.startsWith('Digit')) {
+    const n = +e.code.slice(5) - 1;
+    if (n >= 0 && n < BLOCK_LIST.length) selectBlock(BLOCK_LIST[n]);
+  }
+});
+addEventListener('keyup', e => keys[e.code] = false);
+
+// ===== BLOCKS =====
+const BLOCK_TYPES = {
+  grass:  { color: 0x66cc55, label: 'Grass' },
+  dirt:   { color: 0x8b5a2b, label: 'Dirt' },
+  stone:  { color: 0x999999, label: 'Stone' },
+  sand:   { color: 0xf2dc8e, label: 'Sand' },
+  snow:   { color: 0xffffff, label: 'Snow' },
+  log:    { color: 0x7a4a1f, label: 'Log' },
+  leaves: { color: 0x4caf50, label: 'Leaves' },
+  planks: { color: 0xc69666, label: 'Planks' },
+  brick:  { color: 0xa83d2a, label: 'Brick' },
+  ice:    { color: 0xa8e0ff, label: 'Ice',    opacity: 0.75 },
+  jungle: { color: 0x2e7d32, label: 'Jungle' },
+  cactus: { color: 0x3d7a1d, label: 'Cactus' },
+  glass:  { color: 0xd5edff, label: 'Glass',  opacity: 0.4 },
+  flower: { color: 0xff77aa, label: 'Flower' },
+  water:  { color: 0x3d72e8, label: 'Water',  opacity: 0.65 },
+  gold:   { color: 0xffd54a, label: 'Gold!' },
+};
+const BLOCK_LIST = Object.keys(BLOCK_TYPES);
+let currentBlock = 'grass';
+
+const blocks = new Map();
+const meshes = {};
+const cubeGeom = new THREE.BoxGeometry(1, 1, 1);
+
+function setBlock(x, y, z, type) {
+  const k = `${x},${y},${z}`;
+  if (type === null) blocks.delete(k);
+  else blocks.set(k, type);
+}
+
+function rebuildMeshes() {
+  for (const k in meshes) {
+    scene.remove(meshes[k]);
+    meshes[k].material.dispose();
+    delete meshes[k];
+  }
+  const byType = {};
+  for (const [pos, type] of blocks) {
+    (byType[type] = byType[type] || []).push(pos);
+  }
+  const m = new THREE.Matrix4();
+  for (const type in byType) {
+    const positions = byType[type];
+    const def = BLOCK_TYPES[type];
+    const mat = new THREE.MeshLambertMaterial({
+      color: def.color,
+      transparent: def.opacity !== undefined,
+      opacity: def.opacity ?? 1,
+    });
+    const mesh = new THREE.InstancedMesh(cubeGeom, mat, positions.length);
+    positions.forEach((p, i) => {
+      const [x, y, z] = p.split(',').map(Number);
+      m.setPosition(x, y, z);
+      mesh.setMatrixAt(i, m);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    scene.add(mesh);
+    meshes[type] = mesh;
+  }
+}
+
+// ===== CHARACTERS (villagers + Buddy) =====
+const allCharacters = [];
+
+function makeNameLabel(text) {
+  const cnv = document.createElement('canvas');
+  cnv.width = 256; cnv.height = 72;
+  const ctx = cnv.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(8, 8, 240, 56, 16) : ctx.rect(8, 8, 240, 56);
+  ctx.fill();
+  ctx.font = 'bold 36px sans-serif';
+  ctx.fillStyle = '#ffe45c';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 36);
+  const tex = new THREE.CanvasTexture(cnv);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(1.8, 0.5, 1);
+  sprite.renderOrder = 999;
+  return sprite;
+}
+
+function makeCharacter(name, x, y, z, hatColor, bodyColor) {
+  const group = new THREE.Group();
+  group.position.set(x, y, z);
+
+  const skin = new THREE.MeshLambertMaterial({ color: 0xffd9a8 });
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), skin);
+  head.position.y = 1.4;
+  group.add(head);
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.9, 0.4), new THREE.MeshLambertMaterial({ color: bodyColor }));
+  body.position.y = 0.65;
+  group.add(body);
+
+  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.85, 0.3), new THREE.MeshLambertMaterial({ color: bodyColor }));
+  armL.position.set(-0.46, 0.65, 0);
+  group.add(armL);
+  const armR = armL.clone();
+  armR.position.x = 0.46;
+  group.add(armR);
+
+  const legMat = new THREE.MeshLambertMaterial({ color: 0x444466 });
+  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.4, 0.32), legMat);
+  legL.position.set(-0.18, 0.0, 0);
+  group.add(legL);
+  const legR = legL.clone(); legR.position.x = 0.18;
+  group.add(legR);
+
+  const hatMat = new THREE.MeshLambertMaterial({ color: hatColor });
+  const hat = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.22, 0.7), hatMat);
+  hat.position.y = 1.82;
+  group.add(hat);
+  const hatTop = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.25, 0.3), hatMat);
+  hatTop.position.y = 2.05;
+  group.add(hatTop);
+
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+  const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.04), eyeMat);
+  eyeL.position.set(-0.14, 1.45, 0.31);
+  group.add(eyeL);
+  const eyeR = eyeL.clone(); eyeR.position.x = 0.14;
+  group.add(eyeR);
+
+  const label = makeNameLabel(name);
+  label.position.y = 2.6;
+  group.add(label);
+
+  group.userData = { kind: 'character', name, hatColor, bodyColor, hat, hatTop, body, armL, armR, label };
+  scene.add(group);
+  allCharacters.push(group);
+  return group;
+}
+
+function setCharacterHatColor(g, hex) {
+  const c = new THREE.Color(hex);
+  g.userData.hat.material.color = c;
+  g.userData.hatTop.material.color = c;
+  g.userData.hatColor = hex;
+}
+function setCharacterName(g, name) {
+  g.remove(g.userData.label);
+  g.userData.label.material.map.dispose();
+  g.userData.label.material.dispose();
+  const lbl = makeNameLabel(name);
+  lbl.position.y = 2.6;
+  g.add(lbl);
+  g.userData.label = lbl;
+  g.userData.name = name;
+}
+
+// ===== SPEECH BUBBLES =====
+function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const test = line + word + ' ';
+    if (ctx.measureText(test).width > maxWidth && line !== '') {
+      lines.push(line.trim());
+      line = word + ' ';
+    } else {
+      line = test;
+    }
+  }
+  lines.push(line.trim());
+  const startY = y - (lines.length - 1) * lineHeight / 2;
+  lines.forEach((l, i) => ctx.fillText(l, x, startY + i * lineHeight));
+}
+
+function makeSpeechBubble(text) {
+  const cnv = document.createElement('canvas');
+  cnv.width = 512; cnv.height = 160;
+  const ctx = cnv.getContext('2d');
+  ctx.fillStyle = 'white';
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(6, 6, 500, 116, 24);
+  else ctx.rect(6, 6, 500, 116);
+  ctx.fill(); ctx.stroke();
+  // little pointer triangle below
+  ctx.beginPath();
+  ctx.moveTo(232, 122);
+  ctx.lineTo(256, 152);
+  ctx.lineTo(280, 122);
+  ctx.closePath();
+  ctx.fillStyle = 'white';
+  ctx.fill();
+  ctx.strokeStyle = '#333';
+  ctx.stroke();
+  // text
+  ctx.fillStyle = '#222';
+  ctx.font = 'bold 32px Comic Sans MS, "Marker Felt", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  wrapText(ctx, text, 256, 64, 470, 36);
+
+  const tex = new THREE.CanvasTexture(cnv);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(3.2, 1.0, 1);
+  sprite.renderOrder = 1000;
+  return sprite;
+}
+
+function speakCharacter(group, text) {
+  if (group.userData.bubble) {
+    group.remove(group.userData.bubble);
+    group.userData.bubble.material.map.dispose();
+    group.userData.bubble.material.dispose();
+    if (group.userData.bubbleTimer) clearTimeout(group.userData.bubbleTimer);
+  }
+  const bubble = makeSpeechBubble(text);
+  bubble.position.y = 3.6;
+  group.add(bubble);
+  group.userData.bubble = bubble;
+  group.userData.bubbleTimer = setTimeout(() => {
+    if (group.userData.bubble === bubble) {
+      group.remove(bubble);
+      bubble.material.map.dispose();
+      bubble.material.dispose();
+      group.userData.bubble = null;
+    }
+  }, 4500);
+}
+
+const TALK_PHRASES = {
+  Pip:   ['Hi Annie! 🌸','I love flowers!','Wanna see my garden?','Your hat is so cute!','I picked a flower for you!'],
+  Bobo:  ['BLEEP BLORP! 🤖','I can backflip... probably!','Boop boop boop!','Wanna play tag?','I AM A POTATO!'],
+  Lulu:  ['Hi friend!','Did you know snow is just frozen sky?','I love reading! 📚','What did you build?','I made a pile of leaves!'],
+  Max:   ["Hey. Just chillin'.","Nice day to build!","You're cool!","Wanna race?","I made something small."],
+  Daisy: ['Helloooo!','I LOVE your build!','I can help you build stuff!','Best. Friend. Ever!','I planted a flower!'],
+  Buddy: ['Wanna do a build battle?','I LOVE rockets! 🚀','Press ESC and pick a challenge!','I built a tower over here!','I can build ANYTHING!'],
+};
+function pickPhrase(name) {
+  const list = TALK_PHRASES[name] || ['Hello!','Hi there!','Nice to meet you!','Hey friend!'];
+  return list[Math.floor(Math.random()*list.length)];
+}
+
+const VILLAGER_COLORS = ['#ff6b9d','#6a8cff','#ffe45c','#7bd66b','#b06aff','#ff9f43','#ff3d8a'];
+const VILLAGER_NAMES  = ['Pip','Bobo','Lulu','Max','Daisy','Coco','Ziggy','Tilly'];
+const villagers = [];
+
+function spawnVillager(x, z, name, hat) {
+  const v = makeCharacter(
+    name || VILLAGER_NAMES[villagers.length % VILLAGER_NAMES.length] + (villagers.length >= VILLAGER_NAMES.length ? villagers.length : ''),
+    x, 1, z,
+    hat || VILLAGER_COLORS[Math.floor(Math.random()*VILLAGER_COLORS.length)],
+    VILLAGER_COLORS[Math.floor(Math.random()*VILLAGER_COLORS.length)]
+  );
+  v.userData.kind = 'villager';
+  villagers.push(v);
+  return v;
+}
+
+let buddy = null;
+const BUDDY_HOME = { x: 5, y: 1, z: 16 };
+function spawnBuddy() {
+  buddy = makeCharacter('Buddy', BUDDY_HOME.x, BUDDY_HOME.y, BUDDY_HOME.z, '#ffe45c', '#ff3d8a');
+  buddy.userData.kind = 'buddy';
+}
+
+// ===== WORLD GENERATION =====
+function spawnTree(x, y, z, logType, leafType, height = 4) {
+  for (let h = 0; h < height; h++) setBlock(x, y+h, z, logType);
+  for (let lx = -2; lx <= 2; lx++)
+    for (let lz = -2; lz <= 2; lz++)
+      for (let ly = height - 1; ly <= height + 1; ly++) {
+        const d = Math.abs(lx) + Math.abs(lz) + Math.abs(ly - height);
+        if (d <= 3 && !(lx === 0 && lz === 0 && ly < height))
+          setBlock(x+lx, y+ly, z+lz, leafType);
+      }
+}
+
+function spawnJungleTree(x, y, z) {
+  const h = 6 + Math.floor(Math.random()*3);
+  for (let i = 0; i < h; i++) setBlock(x, y+i, z, 'log');
+  for (let lx = -3; lx <= 3; lx++)
+    for (let lz = -3; lz <= 3; lz++)
+      for (let ly = h - 2; ly <= h + 1; ly++)
+        if (lx*lx + lz*lz <= 9 && Math.random() < 0.7)
+          setBlock(x+lx, y+ly, z+lz, 'jungle');
+}
+
+function buildHouse(x, y, z) {
+  const w = 4, h = 3;
+  for (let dx = 0; dx <= w; dx++)
+    for (let dz = 0; dz <= w; dz++) {
+      setBlock(x+dx, y-1, z+dz, 'planks');
+      const isEdge = dx === 0 || dx === w || dz === 0 || dz === w;
+      if (isEdge) {
+        for (let dy = 0; dy < h; dy++) {
+          if (dz === 0 && dx === 2 && dy < 2) continue;
+          const isWindow = dy === 1 && (
+            ((dx === 1 || dx === 3) && (dz === 0 || dz === w)) ||
+            ((dz === 1 || dz === 3) && (dx === 0 || dx === w))
+          );
+          setBlock(x+dx, y+dy, z+dz, isWindow ? 'glass' : 'planks');
+        }
+      }
+      setBlock(x+dx, y+h, z+dz, 'brick');
+    }
+  setBlock(x+1, y+h+1, z+1, 'brick');
+  setBlock(x+1, y+h+2, z+1, 'brick');
+}
+
+// Arena region (north of village): x [-9,9], z [11,24]
+const ARENA = {
+  minX: -9, maxX: 9, minZ: 11, maxZ: 24,
+  anniePad: { x1: -8, x2: -2, z1: 13, z2: 21 },
+  buddyPad: { x1:  2, x2:  8, z1: 13, z2: 21 },
+};
+function buildArena() {
+  // clear region
+  for (let x = ARENA.minX; x <= ARENA.maxX; x++)
+    for (let z = ARENA.minZ; z <= ARENA.maxZ; z++)
+      for (let y = 1; y < 16; y++)
+        blocks.delete(`${x},${y},${z}`);
+
+  // arena floor
+  for (let x = ARENA.minX; x <= ARENA.maxX; x++)
+    for (let z = ARENA.minZ; z <= ARENA.maxZ; z++)
+      setBlock(x, 0, z, 'planks');
+
+  // Annie's red pad
+  for (let x = ARENA.anniePad.x1; x <= ARENA.anniePad.x2; x++)
+    for (let z = ARENA.anniePad.z1; z <= ARENA.anniePad.z2; z++)
+      setBlock(x, 0, z, 'brick');
+
+  // Buddy's ice pad
+  for (let x = ARENA.buddyPad.x1; x <= ARENA.buddyPad.x2; x++)
+    for (let z = ARENA.buddyPad.z1; z <= ARENA.buddyPad.z2; z++)
+      setBlock(x, 0, z, 'ice');
+
+  // glass divider down the middle
+  for (let z = 13; z <= 21; z++) setBlock(0, 1, z, 'glass');
+
+  // arena front pillars (entrance arch)
+  setBlock(-7, 1, 12, 'brick'); setBlock(-7, 2, 12, 'brick'); setBlock(-7, 3, 12, 'gold');
+  setBlock(7, 1, 12, 'brick');  setBlock(7, 2, 12, 'brick');  setBlock(7, 3, 12, 'gold');
+  setBlock(0, 3, 12, 'gold'); setBlock(-1, 3, 12, 'gold'); setBlock(1, 3, 12, 'gold');
+  setBlock(-2, 3, 12, 'gold'); setBlock(2, 3, 12, 'gold');
+  setBlock(-3, 3, 12, 'brick'); setBlock(3, 3, 12, 'brick');
+  setBlock(-4, 3, 12, 'brick'); setBlock(4, 3, 12, 'brick');
+  setBlock(-5, 3, 12, 'brick'); setBlock(5, 3, 12, 'brick');
+  setBlock(-6, 3, 12, 'brick'); setBlock(6, 3, 12, 'brick');
+}
+
+function generateWorld() {
+  // SNOW
+  for (let x = -30; x <= -1; x++)
+    for (let z = 1; z <= 30; z++) {
+      setBlock(x, 0, z, 'snow');
+      if (Math.random() < 0.04) setBlock(x, 1, z, 'snow');
+      if (Math.random() < 0.015) setBlock(x, 0, z, 'ice');
+    }
+  for (let i = 0; i < 4; i++) {
+    const cx = -28 + Math.floor(Math.random()*26);
+    const cz = 3 + Math.floor(Math.random()*26);
+    const h = 3 + Math.floor(Math.random()*3);
+    for (let y = 1; y <= h; y++) {
+      const r = h - y + 1;
+      for (let dx = -r; dx <= r; dx++)
+        for (let dz = -r; dz <= r; dz++)
+          if (dx*dx + dz*dz <= r*r) setBlock(cx+dx, y, cz+dz, 'snow');
+    }
+  }
+  for (let i = 0; i < 12; i++) {
+    const x = -28 + Math.floor(Math.random()*26);
+    const z = 3 + Math.floor(Math.random()*26);
+    spawnTree(x, 1, z, 'log', 'snow', 4);
+  }
+  for (let i = 0; i < 2; i++) {
+    const cx = -20 + Math.floor(Math.random()*15);
+    const cz = 8 + Math.floor(Math.random()*15);
+    for (let dx = -2; dx <= 2; dx++)
+      for (let dz = -2; dz <= 2; dz++)
+        if (dx*dx + dz*dz <= 5) setBlock(cx+dx, 0, cz+dz, 'ice');
+  }
+
+  // MOUNTAINS
+  for (let x = 1; x <= 30; x++)
+    for (let z = 1; z <= 30; z++)
+      setBlock(x, 0, z, 'grass');
+  for (let m = 0; m < 5; m++) {
+    const cx = 4 + Math.floor(Math.random()*24);
+    const cz = 4 + Math.floor(Math.random()*24);
+    const h = 7 + Math.floor(Math.random()*5);
+    for (let y = 1; y <= h; y++) {
+      const r = Math.max(1, h - y);
+      for (let dx = -r; dx <= r; dx++)
+        for (let dz = -r; dz <= r; dz++)
+          if (dx*dx + dz*dz <= r*r)
+            setBlock(cx+dx, y, cz+dz, y >= h - 1 ? 'snow' : 'stone');
+    }
+    if (Math.random() < 0.5) setBlock(cx, h + 1, cz, 'gold');
+  }
+  for (let i = 0; i < 6; i++) {
+    const x = 2 + Math.floor(Math.random()*28);
+    const z = 2 + Math.floor(Math.random()*28);
+    if (!blocks.has(`${x},1,${z}`)) spawnTree(x, 1, z, 'log', 'leaves', 4);
+  }
+
+  // JUNGLE
+  for (let x = -30; x <= -1; x++)
+    for (let z = -30; z <= 0; z++)
+      setBlock(x, 0, z, 'grass');
+  for (let i = 0; i < 32; i++) {
+    const x = -28 + Math.floor(Math.random()*26);
+    const z = -28 + Math.floor(Math.random()*26);
+    if (!blocks.has(`${x},1,${z}`)) spawnJungleTree(x, 1, z);
+  }
+  for (let i = 0; i < 24; i++) {
+    const x = -28 + Math.floor(Math.random()*26);
+    const z = -28 + Math.floor(Math.random()*26);
+    if (!blocks.has(`${x},1,${z}`)) setBlock(x, 1, z, 'flower');
+  }
+
+  // DESERT
+  for (let x = 1; x <= 30; x++)
+    for (let z = -30; z <= 0; z++) {
+      setBlock(x, 0, z, 'sand');
+      if (Math.random() < 0.04) setBlock(x, 1, z, 'sand');
+    }
+  for (let i = 0; i < 22; i++) {
+    const x = 2 + Math.floor(Math.random()*28);
+    const z = -28 + Math.floor(Math.random()*26);
+    if (blocks.has(`${x},1,${z}`)) continue;
+    const h = 2 + Math.floor(Math.random()*3);
+    for (let y = 1; y <= h; y++) setBlock(x, y, z, 'cactus');
+  }
+  const px = 20, pz = -20;
+  for (let y = 0; y < 7; y++) {
+    const s = 7 - y;
+    for (let dx = -s; dx <= s; dx++)
+      for (let dz = -s; dz <= s; dz++)
+        setBlock(px+dx, 1+y, pz+dz, 'sand');
+  }
+  setBlock(px, 8, pz, 'gold');
+
+  // VILLAGE
+  for (let x = -8; x <= 8; x++)
+    for (let z = -8; z <= 8; z++) {
+      for (let y = 1; y < 8; y++) blocks.delete(`${x},${y},${z}`);
+      setBlock(x, 0, z, 'grass');
+    }
+  buildHouse(-6, 1, -6);
+  buildHouse( 2, 1, -6);
+  buildHouse(-6, 1,  2);
+  buildHouse( 2, 1,  2);
+  for (let v = -8; v <= 8; v++) {
+    setBlock(v, 0, 0, 'stone');
+    setBlock(0, 0, v, 'stone');
+  }
+  for (let i = 0; i < 10; i++) {
+    const x = -7 + Math.floor(Math.random()*15);
+    const z = -7 + Math.floor(Math.random()*15);
+    if (!blocks.has(`${x},1,${z}`) && blocks.get(`${x},0,${z}`) === 'grass') {
+      setBlock(x, 1, z, 'flower');
+    }
+  }
+
+  buildArena();
+  buildOcean();
+}
+
+function buildOcean() {
+  // Ocean stretches south of jungle and desert: z in [-50, -31], x in [-32, 32]
+  for (let x = -32; x <= 32; x++) {
+    for (let z = -50; z <= -31; z++) {
+      setBlock(x, 0, z, 'water');
+    }
+  }
+  // sandy beach strip along the south coast
+  for (let x = -30; x <= 30; x++) {
+    setBlock(x, 0, -30, 'sand');
+    setBlock(x, 0, -31, 'sand');
+  }
+  // little islands with palm trees
+  const islands = [[-20, -40], [-6, -45], [10, -38], [22, -44], [-25, -47]];
+  for (const [ix, iz] of islands) {
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dz = -2; dz <= 2; dz++) {
+        if (dx*dx + dz*dz <= 5) setBlock(ix+dx, 0, iz+dz, 'sand');
+        if (dx*dx + dz*dz <= 2) setBlock(ix+dx, 1, iz+dz, 'sand');
+      }
+    }
+    setBlock(ix, 2, iz, 'log');
+    setBlock(ix, 3, iz, 'log');
+    setBlock(ix, 4, iz, 'log');
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        if (dx === 0 && dz === 0) continue;
+        setBlock(ix+dx, 4, iz+dz, 'jungle');
+      }
+    }
+    setBlock(ix, 5, iz, 'jungle');
+  }
+  // gold treasure on the biggest island
+  setBlock(-20, 2, -40, 'gold');
+  // wooden docks from jungle and desert reaching into the sea
+  for (let z = -30; z >= -36; z--) {
+    setBlock(-15, 1, z, 'planks');
+    setBlock(15, 1, z, 'planks');
+  }
+  // dock end with a glass lantern post
+  setBlock(-15, 2, -36, 'glass');
+  setBlock(-15, 3, -36, 'gold');
+  setBlock(15, 2, -36, 'glass');
+  setBlock(15, 3, -36, 'gold');
+}
+
+// ===== BUILDS LIBRARY (for Buddy) =====
+const BUILDS = {
+  castle: (() => {
+    const b = [];
+    for (let x = 0; x < 5; x++) for (let z = 0; z < 5; z++) b.push([x, 0, z, 'stone']);
+    for (let y = 1; y <= 3; y++) {
+      for (let x = 0; x < 5; x++) { b.push([x, y, 0, 'stone']); b.push([x, y, 4, 'stone']); }
+      for (let z = 1; z < 4; z++) { b.push([0, y, z, 'stone']); b.push([4, y, z, 'stone']); }
+    }
+    [[0,0],[4,0],[0,4],[4,4]].forEach(([x,z]) => {
+      b.push([x, 4, z, 'stone']); b.push([x, 5, z, 'brick']);
+    });
+    b.push([2, 4, 2, 'gold']);
+    return b.filter(([x,y,z]) => !(x === 2 && z === 0 && (y === 1 || y === 2)));
+  })(),
+  house: (() => {
+    const b = [];
+    for (let dx = 0; dx <= 4; dx++) for (let dz = 0; dz <= 4; dz++) {
+      b.push([dx, 0, dz, 'planks']);
+      const isEdge = dx === 0 || dx === 4 || dz === 0 || dz === 4;
+      if (isEdge) for (let dy = 1; dy <= 2; dy++) {
+        if (dz === 0 && dx === 2 && dy < 3) continue;
+        const isWindow = dy === 1 && ((dx === 1 || dx === 3) && (dz === 0 || dz === 4));
+        b.push([dx, dy, dz, isWindow ? 'glass' : 'planks']);
+      }
+      b.push([dx, 3, dz, 'brick']);
+    }
+    return b;
+  })(),
+  tree: [
+    [2,0,2,'log'],[2,1,2,'log'],[2,2,2,'log'],[2,3,2,'log'],
+    [1,3,2,'leaves'],[3,3,2,'leaves'],[2,3,1,'leaves'],[2,3,3,'leaves'],
+    [1,4,1,'leaves'],[1,4,2,'leaves'],[1,4,3,'leaves'],
+    [2,4,1,'leaves'],[2,4,2,'leaves'],[2,4,3,'leaves'],
+    [3,4,1,'leaves'],[3,4,2,'leaves'],[3,4,3,'leaves'],
+    [2,5,2,'leaves'],
+  ],
+  tower: [
+    [2,0,2,'stone'],[2,1,2,'stone'],[2,2,2,'stone'],[2,3,2,'stone'],
+    [2,4,2,'stone'],[2,5,2,'stone'],[2,6,2,'brick'],[2,7,2,'gold'],
+  ],
+  pyramid: (() => {
+    const b = [];
+    for (let y = 0; y < 5; y++) {
+      const s = 5 - y;
+      for (let dx = 0; dx < s; dx++) for (let dz = 0; dz < s; dz++)
+        b.push([dx + y, y, dz + y, 'sand']);
+    }
+    return b;
+  })(),
+  snowman: [
+    [2,0,2,'snow'],[2,1,2,'snow'],[2,2,2,'snow'],
+    [1,2,2,'snow'],[3,2,2,'snow'],
+    [2,3,2,'snow'],
+    [2,4,2,'stone'],
+  ],
+  rocket: [
+    [2,0,2,'stone'],
+    [2,1,2,'brick'],[1,1,2,'brick'],[3,1,2,'brick'],[2,1,1,'brick'],[2,1,3,'brick'],
+    [2,2,2,'brick'],[2,3,2,'brick'],
+    [2,4,2,'gold'],[2,5,2,'gold'],
+    [2,6,2,'water'],
+  ],
+  flower: [
+    [2,0,2,'log'],[2,1,2,'flower'],
+    [1,1,2,'flower'],[3,1,2,'flower'],[2,1,1,'flower'],[2,1,3,'flower'],
+  ],
+  bridge: [
+    [0,0,2,'planks'],[1,0,2,'planks'],[2,0,2,'planks'],[3,0,2,'planks'],[4,0,2,'planks'],
+    [0,1,2,'planks'],[0,2,2,'planks'],[4,1,2,'planks'],[4,2,2,'planks'],
+    [0,3,2,'planks'],[1,3,2,'planks'],[2,3,2,'planks'],[3,3,2,'planks'],[4,3,2,'planks'],
+  ],
+  igloo: (() => {
+    const b = [];
+    for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+      if (dx*dx + dz*dz <= 5) b.push([dx + 2, 0, dz + 2, 'snow']);
+      if (dx*dx + dz*dz <= 4) b.push([dx + 2, 1, dz + 2, 'snow']);
+      if (dx*dx + dz*dz <= 1) b.push([dx + 2, 2, dz + 2, 'snow']);
+    }
+    return b.filter(([x,y,z]) => !(x === 2 && z === 4 && y === 0));
+  })(),
+  rainbow: (() => {
+    const b = [];
+    const order = ['flower','sand','gold','leaves','water','jungle'];
+    const positions = [[0,2],[1,3],[2,4],[3,4],[4,3],[5,2]];
+    positions.forEach(([x,y], i) => b.push([x, y, 2, order[i]]));
+    return b;
+  })(),
+  car: [
+    [0,0,2,'stone'],[4,0,2,'stone'],
+    [1,0,2,'planks'],[2,0,2,'planks'],[3,0,2,'planks'],
+    [1,1,2,'planks'],[3,1,2,'planks'],
+    [2,1,2,'glass'],
+  ],
+};
+
+const ALIASES = {
+  'castle': 'castle','palace': 'castle','fort': 'castle',
+  'house': 'house','home': 'house','cottage': 'house',
+  'tree': 'tree','plant': 'tree',
+  'tower': 'tower','skyscraper': 'tower',
+  'pyramid': 'pyramid','triangle': 'pyramid',
+  'snowman': 'snowman','snow man': 'snowman',
+  'rocket': 'rocket','spaceship': 'rocket','ship': 'rocket',
+  'flower': 'flower','flowers': 'flower',
+  'bridge': 'bridge',
+  'igloo': 'igloo',
+  'rainbow': 'rainbow',
+  'car': 'car','truck': 'car','vehicle': 'car',
+};
+
+// ===== ARENA / BUILD ANIMATION =====
+const BUDDY_BUILD_ORIGIN = { x: 3, y: 1, z: 14 };
+let buildQueue = [];
+let buildTimer = null;
+
+function clearBuddyPad() {
+  for (let x = ARENA.buddyPad.x1; x <= ARENA.buddyPad.x2; x++)
+    for (let z = ARENA.buddyPad.z1; z <= ARENA.buddyPad.z2; z++)
+      for (let y = 1; y <= 14; y++)
+        setBlock(x, y, z, null);
+}
+
+function buddyBuild(key) {
+  const recipe = BUILDS[key];
+  if (!recipe) return false;
+  clearBuddyPad();
+  rebuildMeshes();
+  buildQueue = recipe.map(([dx, dy, dz, t]) => [BUDDY_BUILD_ORIGIN.x + dx, BUDDY_BUILD_ORIGIN.y + dy, BUDDY_BUILD_ORIGIN.z + dz, t]);
+  if (buildTimer) clearInterval(buildTimer);
+  buildTimer = setInterval(() => {
+    if (buildQueue.length === 0) {
+      clearInterval(buildTimer);
+      buildTimer = null;
+      showStatus('🎉 Buddy is done! Press ESC and pick who wins!', 6000);
+      document.getElementById('winnerUI').style.display = 'block';
+      // little wave animation
+      if (buddy) {
+        buddy.userData.armR.rotation.x = -0.5;
+        setTimeout(() => { if (buddy) buddy.userData.armR.rotation.x = 0; }, 600);
+      }
+      return;
+    }
+    const [x, y, z, t] = buildQueue.shift();
+    setBlock(x, y, z, t);
+    rebuildMeshes();
+  }, 160);
+  return true;
+}
+
+function handleChallenge(text) {
+  text = text.toLowerCase().trim();
+  showStatus(`Heard: "${text}"`);
+  let found = null;
+  for (const word of Object.keys(ALIASES)) {
+    if (text.includes(word)) { found = ALIASES[word]; break; }
+  }
+  if (!found) {
+    const keys = Object.keys(BUILDS);
+    found = keys[Math.floor(Math.random()*keys.length)];
+    setTimeout(() => showStatus(`Hmm, I'll surprise you with a ${found}!`, 3000), 1500);
+  } else {
+    setTimeout(() => showStatus(`Buddy says: I'll build a ${found}! 🛠️`, 3000), 1500);
+  }
+  setTimeout(() => {
+    buddyBuild(found);
+    // teleport Annie to her pad too if not already there
+    const p = controls.getObject().position;
+    const inArena = p.x >= ARENA.minX && p.x <= ARENA.maxX && p.z >= ARENA.minZ && p.z <= ARENA.maxZ;
+    if (!inArena) controls.getObject().position.set(-5, 3, 17);
+  }, 2000);
+}
+
+// ===== VOICE =====
+let recognition = null;
+function setupSpeech() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = document.getElementById('micBtn');
+  if (!SR) {
+    btn.textContent = '🎤 (Voice not supported - use buttons!)';
+    btn.disabled = true;
+    return;
+  }
+  recognition = new SR();
+  recognition.continuous = false;
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    handleChallenge(text);
+  };
+  recognition.onerror = () => { showStatus("Couldn't hear you! Try a button.", 3000); btn.classList.remove('listening'); };
+  recognition.onend = () => btn.classList.remove('listening');
+  btn.onclick = () => {
+    try {
+      recognition.start();
+      btn.classList.add('listening');
+      showStatus('🎤 Listening... say "build a castle!" or "make a tree!"', 5000);
+    } catch (e) { /* already started */ }
+  };
+}
+setupSpeech();
+
+// ===== STATUS =====
+const statusEl = document.getElementById('status');
+let statusTimer = null;
+function showStatus(text, duration = 4000) {
+  statusEl.textContent = text;
+  statusEl.classList.add('show');
+  if (statusTimer) clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => statusEl.classList.remove('show'), duration);
+}
+
+// ===== HOTBAR =====
+const hotbarEl = document.getElementById('hotbar');
+function buildHotbar() {
+  hotbarEl.innerHTML = '';
+  BLOCK_LIST.forEach((type, i) => {
+    const def = BLOCK_TYPES[type];
+    const slot = document.createElement('div');
+    slot.className = 'slot' + (type === currentBlock ? ' active' : '');
+    slot.style.background = '#' + def.color.toString(16).padStart(6, '0');
+    if (def.opacity !== undefined) slot.style.opacity = 0.5 + def.opacity * 0.5;
+    slot.textContent = def.label;
+    slot.dataset.type = type;
+    if (i < 9) {
+      const k = document.createElement('div');
+      k.className = 'key'; k.textContent = i + 1;
+      slot.appendChild(k);
+    }
+    slot.onclick = () => selectBlock(type);
+    hotbarEl.appendChild(slot);
+  });
+}
+function selectBlock(type) {
+  currentBlock = type;
+  document.querySelectorAll('.slot').forEach(s =>
+    s.classList.toggle('active', s.dataset.type === type)
+  );
+}
+
+// ===== RAYCASTING (place/remove blocks, click characters) =====
+const raycaster = new THREE.Raycaster();
+raycaster.far = 8;
+const center = new THREE.Vector2(0, 0);
+
+// Click on a character = talk to them. Block placing/removing is on E and Q keys.
+renderer.domElement.addEventListener('mousedown', () => {
+  if (!controls.isLocked) return;
+  raycaster.setFromCamera(center, camera);
+  const hits = raycaster.intersectObjects(allCharacters, true);
+  if (!hits.length) return;
+  let o = hits[0].object;
+  let charGroup = null;
+  while (o) {
+    if (o.userData && (o.userData.kind === 'villager' || o.userData.kind === 'buddy')) {
+      charGroup = o; break;
+    }
+    o = o.parent;
+  }
+  if (!charGroup) return;
+  speakCharacter(charGroup, pickPhrase(charGroup.userData.name));
+  if (charGroup.userData.kind === 'villager') {
+    const idx = VILLAGER_COLORS.indexOf(charGroup.userData.hatColor);
+    const next = VILLAGER_COLORS[(idx + 1) % VILLAGER_COLORS.length] || VILLAGER_COLORS[0];
+    setCharacterHatColor(charGroup, next);
+  } else if (charGroup.userData.kind === 'buddy') {
+    buddy.userData.armR.rotation.x = -0.5;
+    setTimeout(() => buddy && (buddy.userData.armR.rotation.x = 0), 600);
+  }
+});
+addEventListener('contextmenu', e => e.preventDefault());
+
+function tryPlaceBlock() {
+  if (!controls.isLocked) return;
+  raycaster.setFromCamera(center, camera);
+  const hits = raycaster.intersectObjects(Object.values(meshes));
+  if (!hits.length) return;
+  const h = hits[0];
+  const mat = new THREE.Matrix4();
+  h.object.getMatrixAt(h.instanceId, mat);
+  const pos = new THREE.Vector3().setFromMatrixPosition(mat);
+  const np = pos.clone().add(h.face.normal);
+  const player = controls.getObject().position;
+  if (Math.round(np.x) === Math.round(player.x) &&
+      Math.round(np.z) === Math.round(player.z) &&
+      Math.abs(np.y - player.y) < 1.5) return;
+  setBlock(Math.round(np.x), Math.round(np.y), Math.round(np.z), currentBlock);
+  rebuildMeshes();
+}
+
+function tryRemoveBlock() {
+  if (!controls.isLocked) return;
+  raycaster.setFromCamera(center, camera);
+  const hits = raycaster.intersectObjects(Object.values(meshes));
+  if (!hits.length) return;
+  const h = hits[0];
+  const mat = new THREE.Matrix4();
+  h.object.getMatrixAt(h.instanceId, mat);
+  const pos = new THREE.Vector3().setFromMatrixPosition(mat);
+  setBlock(Math.round(pos.x), Math.round(pos.y), Math.round(pos.z), null);
+  rebuildMeshes();
+}
+
+let lastBuildAction = 0;
+addEventListener('keydown', e => {
+  if (e.code !== 'KeyE' && e.code !== 'KeyQ') return;
+  const now = performance.now();
+  if (now - lastBuildAction < 140) return; // throttle while held
+  lastBuildAction = now;
+  if (e.code === 'KeyE') tryPlaceBlock();
+  else tryRemoveBlock();
+});
+
+// ===== TELEPORTS =====
+const tps = {
+  village:   [0, 5, 0],
+  snow:      [-15, 5, 15],
+  jungle:    [-15, 5, -15],
+  desert:    [15, 5, -15],
+  mountains: [15, 14, 15],
+  ocean:     [0, 5, -40],
+  arena:     [-5, 4, 22],
+};
+document.querySelectorAll('#teleports button').forEach(b => {
+  b.onclick = (e) => {
+    e.stopPropagation();
+    const t = tps[b.dataset.tp];
+    if (t) controls.getObject().position.set(t[0], t[1], t[2]);
+    controls.lock();
+  };
+});
+
+// ===== CHALLENGE BUTTONS =====
+document.querySelectorAll('#challenges button').forEach(b => {
+  b.onclick = (e) => {
+    e.stopPropagation();
+    const key = b.dataset.build;
+    showStatus(`Buddy says: I'll build a ${key}! 🛠️`, 3000);
+    setTimeout(() => {
+      buddyBuild(key);
+      controls.getObject().position.set(-5, 3, 17);
+      controls.lock();
+    }, 800);
+  };
+});
+
+// ===== WINNER BUTTONS =====
+document.querySelectorAll('#winnerUI button').forEach(b => {
+  b.onclick = (e) => {
+    e.stopPropagation();
+    const w = b.dataset.winner;
+    let msg;
+    if (w === 'annie')  msg = '🏆🥇 ANNIE WINS! AMAZING BUILD! 🎉';
+    else if (w === 'buddy') msg = '🏆🥇 BUDDY WINS! NICE ONE BUDDY! 🤖';
+    else msg = '🤝 IT\'S A TIE! GREAT JOB BOTH OF YOU! 🎉';
+    showStatus(msg, 6000);
+    document.getElementById('winnerUI').style.display = 'none';
+    controls.lock();
+  };
+});
+
+// ===== VILLAGER UI =====
+function renderVillagerList() {
+  const list = document.getElementById('villagerList');
+  list.innerHTML = '';
+  villagers.forEach((v, i) => {
+    const row = document.createElement('div');
+    row.className = 'vrow';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = v.userData.name;
+    nameInput.maxLength = 14;
+    nameInput.onchange = () => setCharacterName(v, nameInput.value || 'Villager');
+
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.value = v.userData.hatColor;
+    colorInput.oninput = () => setCharacterHatColor(v, colorInput.value);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = '✕';
+    removeBtn.title = 'Remove villager';
+    removeBtn.onclick = () => {
+      scene.remove(v);
+      const ai = allCharacters.indexOf(v);
+      if (ai >= 0) allCharacters.splice(ai, 1);
+      villagers.splice(i, 1);
+      renderVillagerList();
+    };
+
+    row.appendChild(document.createTextNode('🧑 '));
+    row.appendChild(nameInput);
+    row.appendChild(colorInput);
+    row.appendChild(removeBtn);
+    list.appendChild(row);
+  });
+}
+
+document.getElementById('addVillagerBtn').onclick = () => {
+  // place at a random village spot
+  let x, z, tries = 0;
+  do {
+    x = -7 + Math.floor(Math.random()*15);
+    z = -7 + Math.floor(Math.random()*15);
+    tries++;
+  } while ((blocks.has(`${x},1,${z}`) || (Math.abs(x) < 1 || Math.abs(z) < 1)) && tries < 20);
+  const name = prompt("What's their name?", VILLAGER_NAMES[Math.floor(Math.random()*VILLAGER_NAMES.length)]);
+  if (name === null) return;
+  const v = spawnVillager(x, z, name.trim() || 'Villager');
+  initNPC(v);
+  renderVillagerList();
+  showStatus(`Added ${name}! 🧑`);
+};
+
+// ===== NPC BEHAVIOR (villagers + Buddy build & break) =====
+function initNPC(c) {
+  c.userData.npc = {
+    nextAction: performance.now() + 3000 + Math.random()*4000,
+    myBlocks: [],
+    armWiggleEnd: 0,
+  };
+}
+
+function npcSafeToPlace(x, y, z) {
+  const p = controls.getObject().position;
+  if (Math.round(p.x) === x && Math.round(p.z) === z && Math.abs(p.y - y) < 1.5) return false;
+  return !blocks.has(`${x},${y},${z}`);
+}
+
+function npcPlace(c) {
+  const px = Math.round(c.position.x);
+  const pz = Math.round(c.position.z);
+  for (let tries = 0; tries < 8; tries++) {
+    const dx = Math.floor(Math.random()*5) - 2;
+    const dz = Math.floor(Math.random()*5) - 2;
+    if (dx === 0 && dz === 0) continue;
+    const x = px + dx, z = pz + dz;
+    let y = 1;
+    while (blocks.has(`${x},${y},${z}`) && y < 6) y++;
+    if (y >= 6) continue;
+    if (!npcSafeToPlace(x, y, z)) continue;
+    const palette = c.userData.kind === 'buddy'
+      ? ['planks','brick','gold','stone','glass']
+      : ['flower','planks','leaves','sand','snow','flower','flower'];
+    const t = palette[Math.floor(Math.random()*palette.length)];
+    setBlock(x, y, z, t);
+    c.userData.npc.myBlocks.push(`${x},${y},${z}`);
+    rebuildMeshes();
+    c.userData.armR.rotation.x = -0.7;
+    c.userData.npc.armWiggleEnd = performance.now() + 400;
+    if (Math.random() < 0.35) speakCharacter(c, `I built a ${t}!`);
+    return true;
+  }
+  return false;
+}
+
+function npcBreak(c) {
+  const list = c.userData.npc.myBlocks;
+  if (!list.length) return false;
+  const idx = Math.floor(Math.random()*list.length);
+  const key = list.splice(idx, 1)[0];
+  if (blocks.has(key)) {
+    blocks.delete(key);
+    rebuildMeshes();
+    c.userData.armL.rotation.x = -0.7;
+    c.userData.npc.armWiggleEnd = performance.now() + 400;
+    if (Math.random() < 0.3) speakCharacter(c, 'Oops! Broke that one!');
+  }
+  return true;
+}
+
+function npcWander(c) {
+  if (c.userData.kind === 'buddy') return; // Buddy stays home
+  const dx = Math.floor(Math.random()*3) - 1;
+  const dz = Math.floor(Math.random()*3) - 1;
+  const newX = c.position.x + dx;
+  const newZ = c.position.z + dz;
+  if (Math.abs(newX) <= 7 && Math.abs(newZ) <= 7) {
+    c.position.x = newX;
+    c.position.z = newZ;
+  }
+}
+
+function tickNPCs(now) {
+  for (const c of allCharacters) {
+    if (!c.userData.npc) continue;
+    // Skip Buddy while he's building a challenge
+    if (c.userData.kind === 'buddy' && buildQueue.length > 0) continue;
+    // reset arms after wiggle
+    if (c.userData.npc.armWiggleEnd && now > c.userData.npc.armWiggleEnd) {
+      c.userData.armR.rotation.x = 0;
+      c.userData.armL.rotation.x = 0;
+      c.userData.npc.armWiggleEnd = 0;
+    }
+    if (now < c.userData.npc.nextAction) continue;
+    c.userData.npc.nextAction = now + 4500 + Math.random()*5000;
+    const r = Math.random();
+    if (r < 0.5) npcPlace(c);
+    else if (r < 0.7 && c.userData.npc.myBlocks.length > 0) npcBreak(c);
+    else npcWander(c);
+  }
+}
+
+// ===== MOVEMENT =====
+const vel = new THREE.Vector3();
+let prevTime = performance.now();
+const tmpRot = new THREE.Euler(0, 0, 0, 'YXZ');
+
+function update() {
+  const now = performance.now();
+  const dt = Math.min((now - prevTime) / 1000, 0.1);
+  prevTime = now;
+
+  if (controls.isLocked) {
+    const speed = 12;
+    vel.set(0, 0, 0);
+    if (keys['KeyW']) vel.z =  1;
+    if (keys['KeyS']) vel.z = -1;
+    if (keys['KeyA']) vel.x = -1;
+    if (keys['KeyD']) vel.x =  1;
+    if (vel.lengthSq() > 0) vel.normalize().multiplyScalar(speed * dt);
+    controls.moveRight(vel.x);
+    controls.moveForward(vel.z);
+
+    const obj = controls.getObject();
+    if (keys['Space']) obj.position.y += speed * dt;
+    if (keys['ShiftLeft'] || keys['ShiftRight']) obj.position.y -= speed * dt;
+    if (obj.position.y < 1.6) obj.position.y = 1.6;
+  }
+
+  // character look-at-player (gentle turn)
+  const playerPos = controls.getObject().position;
+  for (const c of allCharacters) {
+    const dx = playerPos.x - c.position.x;
+    const dz = playerPos.z - c.position.z;
+    const target = Math.atan2(dx, dz);
+    c.rotation.y += (target - c.rotation.y) * 0.05;
+  }
+
+  // NPCs build and break and wander on their own
+  tickNPCs(now);
+
+  // biome label
+  const p = playerPos;
+  const inArena = p.x >= ARENA.minX && p.x <= ARENA.maxX && p.z >= ARENA.minZ && p.z <= ARENA.maxZ;
+  const inVillage = Math.abs(p.x) <= 8 && Math.abs(p.z) <= 8;
+  let biome;
+  if (inArena) biome = '🏟️ Build Arena';
+  else if (inVillage) biome = '🏘️ Village';
+  else if (p.z < -30) biome = '🌊 Ocean';
+  else if (p.x < 0 && p.z > 0) biome = '❄️ Snowy Place';
+  else if (p.x < 0)            biome = '🌴 Jungle';
+  else if (p.z <= 0)           biome = '🌵 Desert';
+  else                         biome = '⛰️ Mountains';
+  document.getElementById('biome').textContent = biome;
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(update);
+}
+
+// ===== START =====
+buildHotbar();
+generateWorld();
+rebuildMeshes();
+
+// Spawn villagers in village
+spawnVillager(-4, -4, 'Pip', '#ff6b9d');
+spawnVillager( 4, -4, 'Bobo', '#6a8cff');
+spawnVillager(-4,  4, 'Lulu', '#ffe45c');
+spawnVillager( 4,  4, 'Max',  '#7bd66b');
+spawnVillager( 0, -5, 'Daisy','#b06aff');
+
+// Spawn Buddy in arena
+spawnBuddy();
+
+// give every character autonomous build/break behavior
+for (const c of allCharacters) initNPC(c);
+
+renderVillagerList();
+controls.getObject().position.set(0, 5, 0);
+update();
+</script>
+</body>
+</html>

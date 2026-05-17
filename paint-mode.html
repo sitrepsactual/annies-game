@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Annie's Block Game!</title>
+<style>
+  * { box-sizing: border-box; font-family: 'Comic Sans MS', 'Marker Felt', system-ui, sans-serif; }
+  body {
+    margin: 0;
+    padding: 16px;
+    background: linear-gradient(135deg, #ffd6f0 0%, #c8f0ff 50%, #fff3b0 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  h1 {
+    margin: 8px 0;
+    font-size: 42px;
+    color: #ff3d8a;
+    text-shadow: 3px 3px 0 #fff, 6px 6px 0 rgba(0,0,0,0.1);
+    letter-spacing: 2px;
+  }
+  .subtitle {
+    color: #6a4cff;
+    font-size: 18px;
+    margin-bottom: 12px;
+  }
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+    background: white;
+    padding: 12px 16px;
+    border-radius: 20px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    margin-bottom: 12px;
+    max-width: 900px;
+  }
+  .toolbar button, .toolbar label {
+    font-size: 18px;
+    padding: 10px 14px;
+    border: 3px solid #333;
+    border-radius: 14px;
+    background: #fff;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.2s;
+    font-weight: bold;
+  }
+  .toolbar button:hover, .toolbar label:hover { transform: scale(1.05); }
+  .toolbar button:active { transform: scale(0.95); }
+  .toolbar button.active {
+    background: #ffe45c;
+    box-shadow: 0 0 0 4px #ff3d8a inset, 0 4px 0 #ff3d8a;
+  }
+  .color-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: #f0f0ff;
+    border-radius: 14px;
+    border: 3px solid #333;
+  }
+  input[type="color"] {
+    width: 44px;
+    height: 44px;
+    border: none;
+    cursor: pointer;
+    background: none;
+    padding: 0;
+  }
+  canvas {
+    border: 6px solid #333;
+    border-radius: 16px;
+    background: #a8e6cf;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.2);
+    cursor: crosshair;
+    image-rendering: pixelated;
+  }
+  .help {
+    margin-top: 16px;
+    background: white;
+    padding: 12px 20px;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    max-width: 800px;
+    text-align: center;
+    color: #444;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  .help b { color: #ff3d8a; }
+  .swatches {
+    display: flex;
+    gap: 4px;
+  }
+  .swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 3px solid #333;
+    cursor: pointer;
+  }
+  .swatch:hover { transform: scale(1.15); }
+  .banner {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ffe45c;
+    border: 4px solid #333;
+    border-radius: 16px;
+    padding: 16px 28px;
+    font-size: 22px;
+    font-weight: bold;
+    color: #333;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s, transform 0.3s;
+  }
+  .banner.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(10px);
+  }
+</style>
+</head>
+<body>
+  <h1>✨ Annie's Block Game ✨</h1>
+  <div class="subtitle">Paint blocks • Walk around • Shrink tiny • Magic copy hack!</div>
+
+  <div class="toolbar">
+    <div class="color-group">
+      <span>🎨</span>
+      <input type="color" id="colorPicker" value="#ff6b9d">
+      <div class="swatches" id="swatches"></div>
+    </div>
+    <button class="tool active" data-mode="paint">🖌️ Paint</button>
+    <button class="tool" data-mode="erase">🧹 Erase</button>
+    <button class="tool" data-mode="copy">📋 Copy Area</button>
+    <button class="tool" data-mode="stamp" id="stampBtn" disabled>✨ Stamp!</button>
+    <button id="shrinkBtn">🤏 Tiny Me</button>
+    <button id="growBtn">🦣 Big Me</button>
+    <button id="playerColorBtn">👤 My Color</button>
+    <input type="color" id="playerColor" value="#ffcc00" style="display:none">
+    <button id="clearAll">🗑️ Clear All</button>
+    <button id="saveBtn">💾 Save</button>
+  </div>
+
+  <canvas id="game"></canvas>
+
+  <div class="help">
+    <b>How to play:</b> Use <b>arrow keys</b> to walk! <b>Click</b> the grid to paint blocks. Pick the <b>Copy Area</b> tool, drag a box around something cool, then click <b>Stamp</b> to make copies anywhere! Try shrinking tiny to build a teeny house. 🏠
+  </div>
+
+  <div class="banner" id="banner"></div>
+
+<script>
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const CELL = 32;
+  const COLS = 26;
+  const ROWS = 18;
+  canvas.width = COLS * CELL;
+  canvas.height = ROWS * CELL;
+
+  const SAVE_KEY = 'annies-game-v1';
+
+  let grid = Array.from({length: ROWS}, () => Array(COLS).fill(null));
+  let player = { x: 5, y: 5, size: 1, color: '#ffcc00' };
+  let currentColor = '#ff6b9d';
+  let mode = 'paint';
+  let copyStart = null;
+  let copyEnd = null;
+  let copyBuffer = null;
+  let isDragging = false;
+
+  function showBanner(text, ms = 1800) {
+    const b = document.getElementById('banner');
+    b.textContent = text;
+    b.classList.add('show');
+    clearTimeout(showBanner._t);
+    showBanner._t = setTimeout(() => b.classList.remove('show'), ms);
+  }
+
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('.tool').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === m);
+    });
+    if (m === 'copy') showBanner('Drag a box around the blocks you want to copy!');
+    if (m === 'stamp') showBanner('Click anywhere to stamp your creation! ✨');
+  }
+
+  document.querySelectorAll('.tool').forEach(btn => {
+    btn.onclick = () => {
+      if (btn.disabled) return;
+      setMode(btn.dataset.mode);
+    };
+  });
+
+  // Color swatches — quick picks
+  const swatchColors = ['#ff3d8a','#ff9f43','#ffe45c','#7bd66b','#4ecdc4','#6a8cff','#b06aff','#ffffff','#222222','#8b5a2b'];
+  const swatchEl = document.getElementById('swatches');
+  swatchColors.forEach(c => {
+    const s = document.createElement('div');
+    s.className = 'swatch';
+    s.style.background = c;
+    s.onclick = () => {
+      currentColor = c;
+      document.getElementById('colorPicker').value = c;
+    };
+    swatchEl.appendChild(s);
+  });
+
+  document.getElementById('colorPicker').addEventListener('input', e => {
+    currentColor = e.target.value;
+  });
+
+  // Player color
+  const playerColorInput = document.getElementById('playerColor');
+  document.getElementById('playerColorBtn').onclick = () => playerColorInput.click();
+  playerColorInput.addEventListener('input', e => { player.color = e.target.value; });
+
+  function cellAt(e) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = canvas.width / rect.width;
+    const sy = canvas.height / rect.height;
+    const cx = Math.floor(((e.clientX - rect.left) * sx) / CELL);
+    const cy = Math.floor(((e.clientY - rect.top) * sy) / CELL);
+    return { cx, cy };
+  }
+
+  function inBounds(cx, cy) { return cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS; }
+
+  function applyAt(cx, cy) {
+    if (!inBounds(cx, cy)) return;
+    if (mode === 'paint') grid[cy][cx] = currentColor;
+    else if (mode === 'erase') grid[cy][cx] = null;
+  }
+
+  function doStamp(cx, cy) {
+    if (!copyBuffer) return;
+    let placed = 0;
+    for (let y = 0; y < copyBuffer.length; y++) {
+      for (let x = 0; x < copyBuffer[0].length; x++) {
+        const tx = cx + x, ty = cy + y;
+        if (inBounds(tx, ty) && copyBuffer[y][x]) {
+          grid[ty][tx] = copyBuffer[y][x];
+          placed++;
+        }
+      }
+    }
+    if (placed > 0) showBanner('✨ Stamped! Click again for more!');
+  }
+
+  canvas.addEventListener('mousedown', e => {
+    const { cx, cy } = cellAt(e);
+    if (!inBounds(cx, cy)) return;
+    isDragging = true;
+    if (mode === 'paint' || mode === 'erase') {
+      applyAt(cx, cy);
+    } else if (mode === 'copy') {
+      copyStart = { x: cx, y: cy };
+      copyEnd = { x: cx, y: cy };
+    } else if (mode === 'stamp') {
+      doStamp(cx, cy);
+    }
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    const { cx, cy } = cellAt(e);
+    if (!inBounds(cx, cy)) return;
+    if (mode === 'paint' || mode === 'erase') applyAt(cx, cy);
+    else if (mode === 'copy' && copyStart) copyEnd = { x: cx, y: cy };
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (isDragging && mode === 'copy' && copyStart && copyEnd) {
+      const x1 = Math.min(copyStart.x, copyEnd.x);
+      const x2 = Math.max(copyStart.x, copyEnd.x);
+      const y1 = Math.min(copyStart.y, copyEnd.y);
+      const y2 = Math.max(copyStart.y, copyEnd.y);
+      copyBuffer = [];
+      for (let y = y1; y <= y2; y++) {
+        const row = [];
+        for (let x = x1; x <= x2; x++) row.push(grid[y][x]);
+        copyBuffer.push(row);
+      }
+      copyStart = null;
+      copyEnd = null;
+      document.getElementById('stampBtn').disabled = false;
+      setMode('stamp');
+    }
+    isDragging = false;
+  });
+
+  // Touch support so it works on tablets too
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: t.clientX, clientY: t.clientY }));
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    canvas.dispatchEvent(new MouseEvent('mousemove', { clientX: t.clientX, clientY: t.clientY, buttons: 1 }));
+  }, { passive: false });
+  canvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    window.dispatchEvent(new MouseEvent('mouseup'));
+  }, { passive: false });
+
+  document.addEventListener('keydown', e => {
+    const moves = { ArrowUp:[0,-1], ArrowDown:[0,1], ArrowLeft:[-1,0], ArrowRight:[1,0],
+                    w:[0,-1], s:[0,1], a:[-1,0], d:[1,0], W:[0,-1], S:[0,1], A:[-1,0], D:[1,0] };
+    if (moves[e.key]) {
+      e.preventDefault();
+      const [dx, dy] = moves[e.key];
+      const nx = player.x + dx, ny = player.y + dy;
+      if (inBounds(nx, ny)) {
+        player.x = nx;
+        player.y = ny;
+      }
+    }
+  });
+
+  document.getElementById('shrinkBtn').onclick = () => {
+    player.size = Math.max(0.25, +(player.size - 0.25).toFixed(2));
+    showBanner(player.size <= 0.25 ? '🐜 Super tiny!' : '🤏 Tinier!');
+  };
+  document.getElementById('growBtn').onclick = () => {
+    player.size = Math.min(2, +(player.size + 0.25).toFixed(2));
+    showBanner(player.size >= 2 ? '🦣 GIANT!' : '🦣 Bigger!');
+  };
+  document.getElementById('clearAll').onclick = () => {
+    if (confirm('Clear EVERYTHING? Are you sure?')) {
+      grid = Array.from({length: ROWS}, () => Array(COLS).fill(null));
+    }
+  };
+  document.getElementById('saveBtn').onclick = () => {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ grid, player }));
+    showBanner('💾 Saved!');
+  };
+
+  // Load saved game if any
+  try {
+    const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if (saved && saved.grid && saved.grid.length === ROWS && saved.grid[0].length === COLS) {
+      grid = saved.grid;
+      if (saved.player) player = { ...player, ...saved.player };
+    }
+  } catch (_) {}
+
+  function drawCharacter(px, py, size, color) {
+    // body
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(px + size/2, py + size/2, size/2 - 2, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = Math.max(1.5, size*0.06);
+    ctx.stroke();
+    // eyes
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.arc(px + size*0.35, py + size*0.4, Math.max(1, size*0.08), 0, Math.PI*2);
+    ctx.arc(px + size*0.65, py + size*0.4, Math.max(1, size*0.08), 0, Math.PI*2);
+    ctx.fill();
+    // smile
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = Math.max(1, size*0.05);
+    ctx.beginPath();
+    ctx.arc(px + size/2, py + size*0.55, size*0.18, 0.15*Math.PI, 0.85*Math.PI);
+    ctx.stroke();
+  }
+
+  function draw() {
+    // background
+    ctx.fillStyle = '#a8e6cf';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= COLS; x++) {
+      ctx.beginPath(); ctx.moveTo(x*CELL, 0); ctx.lineTo(x*CELL, ROWS*CELL); ctx.stroke();
+    }
+    for (let y = 0; y <= ROWS; y++) {
+      ctx.beginPath(); ctx.moveTo(0, y*CELL); ctx.lineTo(COLS*CELL, y*CELL); ctx.stroke();
+    }
+    // blocks
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        const c = grid[y][x];
+        if (c) {
+          ctx.fillStyle = c;
+          ctx.fillRect(x*CELL+1, y*CELL+1, CELL-2, CELL-2);
+          // little highlight
+          ctx.fillStyle = 'rgba(255,255,255,0.25)';
+          ctx.fillRect(x*CELL+2, y*CELL+2, CELL-4, 4);
+          // little shadow
+          ctx.fillStyle = 'rgba(0,0,0,0.18)';
+          ctx.fillRect(x*CELL+2, y*CELL+CELL-5, CELL-4, 3);
+        }
+      }
+    }
+    // copy selection
+    if (mode === 'copy' && copyStart && copyEnd) {
+      const x1 = Math.min(copyStart.x, copyEnd.x);
+      const x2 = Math.max(copyStart.x, copyEnd.x);
+      const y1 = Math.min(copyStart.y, copyEnd.y);
+      const y2 = Math.max(copyStart.y, copyEnd.y);
+      ctx.fillStyle = 'rgba(255, 61, 138, 0.2)';
+      ctx.fillRect(x1*CELL, y1*CELL, (x2-x1+1)*CELL, (y2-y1+1)*CELL);
+      ctx.strokeStyle = '#ff3d8a';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([8,5]);
+      ctx.strokeRect(x1*CELL, y1*CELL, (x2-x1+1)*CELL, (y2-y1+1)*CELL);
+      ctx.setLineDash([]);
+    }
+    // stamp preview at mouse?  (optional polish later)
+    // player
+    const size = player.size * CELL;
+    const px = player.x * CELL + (CELL - size)/2;
+    const py = player.y * CELL + (CELL - size)/2;
+    drawCharacter(px, py, size, player.color);
+
+    requestAnimationFrame(draw);
+  }
+  draw();
+</script>
+</body>
+</html>
