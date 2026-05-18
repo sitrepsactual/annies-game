@@ -2,6 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Annie's World">
+<meta name="theme-color" content="#87ceeb">
 <title>Annie's 3D Block World!</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Comic Sans MS', 'Marker Felt', system-ui, sans-serif; }
@@ -177,6 +182,64 @@
     border: 2px solid white;
   }
   #help b { color: #ffe45c; }
+
+  /* ===== TOUCH CONTROLS (visible only on touch devices) ===== */
+  #touchUI { display: none; }
+  body.touch #touchUI { display: block; }
+  body.touch #help { display: none; }
+  body.touch #hotbar { bottom: auto; top: 70px; max-width: 92vw; }
+  body.touch #biome { font-size: 18px; padding: 8px 16px; }
+
+  #menuBtn {
+    position: fixed; top: 16px; left: 16px;
+    width: 56px; height: 56px;
+    font-size: 28px; font-weight: bold;
+    background: rgba(0,0,0,0.55); color: white;
+    border: 3px solid white; border-radius: 14px;
+    z-index: 60; cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  #joystick {
+    position: fixed; bottom: 30px; left: 30px;
+    width: 140px; height: 140px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 50%;
+    border: 4px solid rgba(255,255,255,0.8);
+    z-index: 55;
+    touch-action: none;
+  }
+  #joystickKnob {
+    position: absolute; top: 50%; left: 50%;
+    width: 64px; height: 64px;
+    margin: -32px 0 0 -32px;
+    background: rgba(255,255,255,0.9);
+    border-radius: 50%;
+    border: 4px solid #333;
+    pointer-events: none;
+  }
+
+  #actionBtns {
+    position: fixed; bottom: 30px; right: 20px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    z-index: 55;
+  }
+  #actionBtns button {
+    width: 78px; height: 78px;
+    background: rgba(255,255,255,0.9);
+    border: 4px solid #333; border-radius: 16px;
+    font-size: 13px; font-weight: bold;
+    font-family: inherit; line-height: 1.1;
+    cursor: pointer; padding: 4px;
+    box-shadow: 0 4px 0 #333;
+    touch-action: manipulation;
+    user-select: none; -webkit-user-select: none;
+  }
+  #actionBtns button:active { transform: translateY(2px); box-shadow: 0 1px 0 #333; }
+  #btnBuild { background: #ffe45c; }
+  #btnBreak { background: #ff6b9d; color: white; }
+  #btnUp    { background: #b0e8ff; }
+  #btnDown  { background: #d4b0ff; }
 </style>
 </head>
 <body>
@@ -242,6 +305,17 @@
 <div id="status"></div>
 <div id="hotbar"></div>
 
+<div id="touchUI">
+  <button id="menuBtn" title="Menu">☰</button>
+  <div id="joystick"><div id="joystickKnob"></div></div>
+  <div id="actionBtns">
+    <button id="btnUp">⬆️<br>UP</button>
+    <button id="btnBuild">🧱<br>BUILD</button>
+    <button id="btnDown">⬇️<br>DOWN</button>
+    <button id="btnBreak">💥<br>BREAK</button>
+  </div>
+</div>
+
 <div id="help">
   <b>WASD</b> walk<br>
   <b>SPACE</b> fly up &nbsp; <b>SHIFT</b> down<br>
@@ -282,9 +356,22 @@ scene.add(new THREE.HemisphereLight(0x87ceeb, 0x55aa33, 0.3));
 const controls = new THREE.PointerLockControls(camera, document.body);
 scene.add(controls.getObject());
 const overlay = document.getElementById('overlay');
-document.getElementById('playBtn').onclick = () => controls.lock();
+document.getElementById('playBtn').onclick = () => {
+  if (touchMode) {
+    overlay.style.display = 'none';  // touch — no pointer lock
+  } else {
+    controls.lock();
+  }
+};
 controls.addEventListener('lock',   () => overlay.style.display = 'none');
 controls.addEventListener('unlock', () => { overlay.style.display = 'flex'; renderVillagerList(); });
+// ESC also brings menu back on touch
+addEventListener('keydown', e => {
+  if (e.code === 'Escape' && touchMode && overlay.style.display === 'none') {
+    overlay.style.display = 'flex';
+    renderVillagerList();
+  }
+});
 document.addEventListener('pointerlockerror', () => {
   showStatus("Click the Play button again — give me a sec!", 3000);
 });
@@ -1133,6 +1220,173 @@ addEventListener('keydown', e => {
   else tryRemoveBlock();
 });
 
+// ===== TOUCH CONTROLS =====
+let touchMode = false;
+const touchInput = { jx: 0, jy: 0, up: false, down: false };
+
+function enableTouchMode() {
+  if (touchMode) return;
+  touchMode = true;
+  document.body.classList.add('touch');
+}
+addEventListener('touchstart', enableTouchMode, { once: true, passive: true });
+
+// Joystick
+const joyEl = document.getElementById('joystick');
+const knobEl = document.getElementById('joystickKnob');
+const joyState = { active: false, id: null, cx: 0, cy: 0, max: 50 };
+
+joyEl.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (joyState.active) return;
+  const t = e.changedTouches[0];
+  const r = joyEl.getBoundingClientRect();
+  joyState.active = true;
+  joyState.id = t.identifier;
+  joyState.cx = r.left + r.width / 2;
+  joyState.cy = r.top + r.height / 2;
+}, { passive: false });
+
+addEventListener('touchmove', e => {
+  if (!joyState.active) return;
+  for (const t of e.changedTouches) {
+    if (t.identifier !== joyState.id) continue;
+    const dx = t.clientX - joyState.cx;
+    const dy = t.clientY - joyState.cy;
+    const dist = Math.min(joyState.max, Math.hypot(dx, dy));
+    const ang = Math.atan2(dy, dx);
+    const kx = Math.cos(ang) * dist;
+    const ky = Math.sin(ang) * dist;
+    knobEl.style.transform = `translate(${kx}px, ${ky}px)`;
+    touchInput.jx = kx / joyState.max;
+    touchInput.jy = ky / joyState.max;
+  }
+}, { passive: false });
+
+function endJoyTouch(id) {
+  if (joyState.id !== id) return;
+  joyState.active = false;
+  joyState.id = null;
+  knobEl.style.transform = '';
+  touchInput.jx = 0;
+  touchInput.jy = 0;
+}
+addEventListener('touchend', e => {
+  for (const t of e.changedTouches) endJoyTouch(t.identifier);
+});
+addEventListener('touchcancel', e => {
+  for (const t of e.changedTouches) endJoyTouch(t.identifier);
+});
+
+// Action buttons (BUILD / BREAK / UP / DOWN)
+function bindActionButton(id, onStart, onEnd) {
+  const el = document.getElementById(id);
+  el.addEventListener('touchstart', e => { e.preventDefault(); onStart && onStart(); }, { passive: false });
+  el.addEventListener('touchend',   e => { e.preventDefault(); onEnd   && onEnd();   }, { passive: false });
+  el.addEventListener('touchcancel',e => { e.preventDefault(); onEnd   && onEnd();   }, { passive: false });
+  // also wire mouse for desktops that want to try touch UI
+  el.addEventListener('mousedown',  e => { onStart && onStart(); });
+  el.addEventListener('mouseup',    e => { onEnd && onEnd(); });
+  el.addEventListener('mouseleave', e => { onEnd && onEnd(); });
+}
+bindActionButton('btnBuild', tryPlaceBlock);
+bindActionButton('btnBreak', tryRemoveBlock);
+bindActionButton('btnUp',   () => touchInput.up = true,   () => touchInput.up = false);
+bindActionButton('btnDown', () => touchInput.down = true, () => touchInput.down = false);
+
+// Drag-to-look (touches not on UI elements)
+const lookState = { active: false, id: null, lx: 0, ly: 0, moved: false, startX: 0, startY: 0, startTime: 0 };
+const TAP_THRESHOLD_PX = 10;
+const TAP_THRESHOLD_MS = 350;
+const _lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+
+function isUITouch(target) {
+  if (!target) return false;
+  return !!(target.closest && (
+    target.closest('#joystick') ||
+    target.closest('#actionBtns') ||
+    target.closest('#menuBtn') ||
+    target.closest('#hotbar') ||
+    target.closest('#overlay') ||
+    target.closest('#status')
+  ));
+}
+
+addEventListener('touchstart', e => {
+  if (lookState.active) return;
+  const t = e.changedTouches[0];
+  if (isUITouch(t.target)) return;
+  if (touchMode && overlay.style.display !== 'none') return; // overlay open, ignore
+  lookState.active = true;
+  lookState.id = t.identifier;
+  lookState.lx = lookState.startX = t.clientX;
+  lookState.ly = lookState.startY = t.clientY;
+  lookState.moved = false;
+  lookState.startTime = performance.now();
+}, { passive: true });
+
+addEventListener('touchmove', e => {
+  if (!lookState.active) return;
+  for (const t of e.changedTouches) {
+    if (t.identifier !== lookState.id) continue;
+    const dx = t.clientX - lookState.lx;
+    const dy = t.clientY - lookState.ly;
+    lookState.lx = t.clientX;
+    lookState.ly = t.clientY;
+    if (Math.abs(t.clientX - lookState.startX) + Math.abs(t.clientY - lookState.startY) > TAP_THRESHOLD_PX) {
+      lookState.moved = true;
+    }
+    _lookEuler.setFromQuaternion(camera.quaternion);
+    _lookEuler.y -= dx * 0.005;
+    _lookEuler.x -= dy * 0.005;
+    _lookEuler.x = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, _lookEuler.x));
+    camera.quaternion.setFromEuler(_lookEuler);
+  }
+}, { passive: false });
+
+addEventListener('touchend', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier !== lookState.id) continue;
+    const dur = performance.now() - lookState.startTime;
+    // tap (no move, fast) => character interaction
+    if (!lookState.moved && dur < TAP_THRESHOLD_MS) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((t.clientX - rect.left) / rect.width) * 2 - 1,
+        -((t.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      raycaster.setFromCamera(ndc, camera);
+      const hits = raycaster.intersectObjects(allCharacters, true);
+      if (hits.length) {
+        let o = hits[0].object, charGroup = null;
+        while (o) {
+          if (o.userData && (o.userData.kind === 'villager' || o.userData.kind === 'buddy')) { charGroup = o; break; }
+          o = o.parent;
+        }
+        if (charGroup) {
+          speakCharacter(charGroup, pickPhrase(charGroup.userData.name));
+          if (charGroup.userData.kind === 'villager') {
+            const idx = VILLAGER_COLORS.indexOf(charGroup.userData.hatColor);
+            const next = VILLAGER_COLORS[(idx + 1) % VILLAGER_COLORS.length] || VILLAGER_COLORS[0];
+            setCharacterHatColor(charGroup, next);
+          } else if (charGroup.userData.kind === 'buddy') {
+            buddy.userData.armR.rotation.x = -0.5;
+            setTimeout(() => buddy && (buddy.userData.armR.rotation.x = 0), 600);
+          }
+        }
+      }
+    }
+    lookState.active = false;
+    lookState.id = null;
+  }
+}, { passive: true });
+
+// Menu button — show overlay (in-game pause)
+document.getElementById('menuBtn').addEventListener('click', () => {
+  overlay.style.display = 'flex';
+  renderVillagerList();
+});
+
 // ===== TELEPORTS =====
 const tps = {
   village:   [0, 5, 0],
@@ -1334,20 +1588,29 @@ function update() {
   const dt = Math.min((now - prevTime) / 1000, 0.1);
   prevTime = now;
 
-  if (controls.isLocked) {
+  const playing = controls.isLocked || (touchMode && overlay.style.display === 'none');
+  if (playing) {
     const speed = 12;
     vel.set(0, 0, 0);
     if (keys['KeyW']) vel.z =  1;
     if (keys['KeyS']) vel.z = -1;
     if (keys['KeyA']) vel.x = -1;
     if (keys['KeyD']) vel.x =  1;
-    if (vel.lengthSq() > 0) vel.normalize().multiplyScalar(speed * dt);
+    // touch joystick: jy>0 = down on screen = backward, jy<0 = forward
+    if (touchInput.jx !== 0 || touchInput.jy !== 0) {
+      vel.x += touchInput.jx;
+      vel.z += -touchInput.jy;
+    }
+    if (vel.lengthSq() > 0) {
+      if (vel.lengthSq() > 1) vel.normalize();
+      vel.multiplyScalar(speed * dt);
+    }
     controls.moveRight(vel.x);
     controls.moveForward(vel.z);
 
     const obj = controls.getObject();
-    if (keys['Space']) obj.position.y += speed * dt;
-    if (keys['ShiftLeft'] || keys['ShiftRight']) obj.position.y -= speed * dt;
+    if (keys['Space'] || touchInput.up) obj.position.y += speed * dt;
+    if (keys['ShiftLeft'] || keys['ShiftRight'] || touchInput.down) obj.position.y -= speed * dt;
     if (obj.position.y < 1.6) obj.position.y = 1.6;
   }
 
