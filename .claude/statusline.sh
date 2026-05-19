@@ -4,8 +4,11 @@
 
 input=$(cat)
 
+# Derive project root from this script's location so it works on any clone
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 model=$(echo "$input" | jq -r '.model.display_name // "Claude"')
-branch=$(git -C /Users/sitreps2steercos/Documents/GitHub/annies-game --no-optional-locks rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+branch=$(git -C "$PROJECT_DIR" --no-optional-locks rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
 remaining=$(echo "$input" | jq -r '.context_window.remaining_percentage // empty')
 
 # ANSI truecolor helpers
