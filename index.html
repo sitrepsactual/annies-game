@@ -252,7 +252,8 @@
   }
   #restartBtn:hover { transform: translateY(-2px); }
 
-  #modeBtns button.active {
+  #modeBtns button.active,
+  #sizeBtns button.active {
     outline: 4px solid #ff3d8a;
     background: #ffe45c !important;
     transform: scale(1.05);
@@ -361,6 +362,14 @@
       <button data-winner="buddy">🥇 Buddy Wins!</button>
       <button data-winner="tie">🤝 It's a Tie!</button>
     </div>
+  </div>
+
+  <h2>📏 Player Size</h2>
+  <p>Be tiny enough to fit in the tiny house, or grow GIANT!</p>
+  <div class="btn-row" id="sizeBtns">
+    <button data-size="tiny">🐜 Tiny Me</button>
+    <button data-size="normal">🧍 Normal</button>
+    <button data-size="big">🦣 Big Me</button>
   </div>
 
   <h2>🎮 Game Mode</h2>
@@ -976,6 +985,91 @@ function spawnJungleTree(x, y, z) {
           setBlock(x+lx, y+ly, z+lz, 'jungle');
 }
 
+// A teeny 2x2 cottage — only enterable when you shrink to Tiny!
+function buildTinyHouse(x, y, z) {
+  // clear and build a small grass yard
+  for (let dx = -2; dx <= 4; dx++)
+    for (let dz = -2; dz <= 4; dz++) {
+      for (let dy = 0; dy < 5; dy++) blocks.delete(`${x+dx},${y+dy},${z+dz}`);
+      setBlock(x+dx, y-1, z+dz, 'grass');
+    }
+  // floor
+  for (let dx = 0; dx <= 2; dx++)
+    for (let dz = 0; dz <= 2; dz++)
+      setBlock(x+dx, y-1, z+dz, 'planks');
+  // walls (1 block tall, with a tiny door opening at front-middle)
+  for (let dx = 0; dx <= 2; dx++) {
+    setBlock(x+dx, y, z, dx === 1 ? null : 'planks');
+    setBlock(x+dx, y, z+2, 'planks');
+  }
+  setBlock(x, y, z+1, 'planks');
+  setBlock(x+2, y, z+1, 'glass'); // little window
+  // brick roof
+  for (let dx = 0; dx <= 2; dx++)
+    for (let dz = 0; dz <= 2; dz++)
+      setBlock(x+dx, y+1, z+dz, 'brick');
+  // chimney
+  setBlock(x+2, y+2, z, 'brick');
+  // tiny welcome flower
+  setBlock(x+1, y, z-1, 'flower');
+}
+
+// Big mansion 10x10x7 with a huge open interior
+function buildMansion(x, y, z) {
+  const W = 10, H = 6;
+  // clear area + brick plaza around
+  for (let dx = -2; dx <= W+2; dx++)
+    for (let dz = -2; dz <= W+2; dz++) {
+      for (let dy = 0; dy < H + 5; dy++) blocks.delete(`${x+dx},${y+dy},${z+dz}`);
+      setBlock(x+dx, y-1, z+dz, 'planks');
+    }
+  // floor
+  for (let dx = 0; dx <= W; dx++)
+    for (let dz = 0; dz <= W; dz++)
+      setBlock(x+dx, y-1, z+dz, 'planks');
+  // walls (only the perimeter — leave interior empty for building inside!)
+  for (let dx = 0; dx <= W; dx++) {
+    for (let dy = 0; dy < H; dy++) {
+      // skip a big double-door at front-center
+      if (dx >= W/2 - 1 && dx <= W/2 + 1 && dy < 2) {
+        // door opening
+      } else {
+        setBlock(x+dx, y+dy, z, 'planks');
+      }
+      setBlock(x+dx, y+dy, z+W, 'planks');
+    }
+  }
+  for (let dz = 1; dz < W; dz++) {
+    for (let dy = 0; dy < H; dy++) {
+      setBlock(x, y+dy, z+dz, 'planks');
+      setBlock(x+W, y+dy, z+dz, 'planks');
+    }
+  }
+  // big windows on each side
+  for (let i = 2; i < W; i += 2) {
+    setBlock(x+i, y+2, z, 'glass');
+    setBlock(x+i, y+2, z+W, 'glass');
+    setBlock(x, y+2, z+i, 'glass');
+    setBlock(x+W, y+2, z+i, 'glass');
+    setBlock(x+i, y+3, z, 'glass');
+    setBlock(x+i, y+3, z+W, 'glass');
+  }
+  // brick roof
+  for (let dx = 0; dx <= W; dx++)
+    for (let dz = 0; dz <= W; dz++)
+      setBlock(x+dx, y+H, z+dz, 'brick');
+  // chimney with gold trim
+  setBlock(x+1, y+H+1, z+1, 'brick');
+  setBlock(x+1, y+H+2, z+1, 'brick');
+  setBlock(x+1, y+H+3, z+1, 'gold');
+  // a small flagpole on the roof
+  setBlock(x+5, y+H+1, z+5, 'log');
+  setBlock(x+5, y+H+2, z+5, 'log');
+  setBlock(x+5, y+H+3, z+5, 'flower');
+  setBlock(x+4, y+H+3, z+5, 'flower');
+  setBlock(x+6, y+H+3, z+5, 'flower');
+}
+
 function buildHouse(x, y, z) {
   const w = 4, h = 3;
   for (let dx = 0; dx <= w; dx++)
@@ -1158,6 +1252,8 @@ function generateWorld() {
   buildOcean();
   buildOutpost();
   buildBell();
+  buildTinyHouse(-13, 1, -2);
+  buildMansion(11, 1, -5);
 }
 
 function buildOcean() {
@@ -1768,6 +1864,12 @@ document.querySelectorAll('#modeBtns button').forEach(b => {
     setGameMode(b.dataset.mode);
   };
 });
+document.querySelectorAll('#sizeBtns button').forEach(b => {
+  b.onclick = (e) => {
+    e.stopPropagation();
+    setPlayerSize(b.dataset.size);
+  };
+});
 
 document.getElementById('startRaidBtn').onclick = (e) => {
   e.stopPropagation();
@@ -1922,6 +2024,22 @@ function defeatPillager(p) {
       }
     } catch (_) {}
   }
+}
+
+// ===== PLAYER SIZE (tiny / normal / big) =====
+let playerSize = 'normal'; // tiny / normal / big
+const PLAYER_SIZES = {
+  tiny:   { floor: 0.35, speed: 5,  emoji: '🐜' },
+  normal: { floor: 1.6,  speed: 12, emoji: '🧍' },
+  big:    { floor: 3.0,  speed: 18, emoji: '🦣' },
+};
+
+function setPlayerSize(size) {
+  playerSize = size;
+  document.querySelectorAll('#sizeBtns button').forEach(b => {
+    b.classList.toggle('active', b.dataset.size === size);
+  });
+  showStatus(`${PLAYER_SIZES[size].emoji} You are now ${size}!`, 2500);
 }
 
 // ===== GAME MODES (creative / survival / hardcore) =====
@@ -2079,7 +2197,8 @@ function update() {
 
   const playing = controls.isLocked || (touchMode && overlay.style.display === 'none');
   if (playing) {
-    const speed = 12;
+    const sz = PLAYER_SIZES[playerSize];
+    const speed = sz.speed;
     vel.set(0, 0, 0);
     if (keys['KeyW']) vel.z =  1;
     if (keys['KeyS']) vel.z = -1;
@@ -2100,7 +2219,7 @@ function update() {
     const obj = controls.getObject();
     if (keys['Space'] || touchInput.up) obj.position.y += speed * dt;
     if (keys['ShiftLeft'] || keys['ShiftRight'] || touchInput.down) obj.position.y -= speed * dt;
-    if (obj.position.y < 1.6) obj.position.y = 1.6;
+    if (obj.position.y < sz.floor) obj.position.y = sz.floor;
   }
 
   // character look-at-player (gentle turn)
@@ -2163,6 +2282,9 @@ renderVillagerList();
 // Default to creative mode and mark the creative button as active
 document.querySelectorAll('#modeBtns button').forEach(b => {
   b.classList.toggle('active', b.dataset.mode === 'creative');
+});
+document.querySelectorAll('#sizeBtns button').forEach(b => {
+  b.classList.toggle('active', b.dataset.size === 'normal');
 });
 
 controls.getObject().position.set(0, 5, 0);
