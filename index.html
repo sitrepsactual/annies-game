@@ -192,6 +192,72 @@
     box-shadow: 0 4px 0 #333;
   }
 
+  #hearts {
+    position: fixed; top: 80px; left: 16px;
+    background: rgba(0,0,0,0.55);
+    padding: 8px 14px; border-radius: 14px;
+    font-size: 22px; letter-spacing: 1px;
+    z-index: 55; border: 3px solid white;
+    color: white;
+    pointer-events: none;
+  }
+  body.touch #hearts { top: 80px; left: 80px; }
+
+  #modeBadge {
+    position: fixed; top: 16px; right: 16px;
+    background: #ffe45c; color: #333;
+    padding: 8px 16px; border-radius: 14px;
+    font-size: 16px; font-weight: bold;
+    z-index: 55; border: 3px solid #333;
+    pointer-events: none;
+    box-shadow: 0 4px 0 #333;
+  }
+  body.touch #modeBadge { top: 80px; right: 16px; }
+
+  #damageFlash {
+    position: fixed; inset: 0;
+    background: rgba(255, 0, 0, 0.5);
+    z-index: 70; pointer-events: none;
+    opacity: 0; transition: opacity 0.4s;
+  }
+  #damageFlash.show { opacity: 1; transition: opacity 0s; }
+
+  #gameOver {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #gameOver .go-card {
+    background: linear-gradient(135deg, #4a0010, #1a0033);
+    border: 6px solid #ff3d8a;
+    border-radius: 24px;
+    padding: 40px 60px;
+    text-align: center;
+    color: white;
+    max-width: 90vw;
+  }
+  #gameOver h1 {
+    font-size: 56px; color: #ff3d8a;
+    text-shadow: 3px 3px 0 #000;
+    margin-bottom: 16px; letter-spacing: 3px;
+  }
+  #gameOver p { font-size: 20px; margin: 12px 0 24px; }
+  #restartBtn {
+    background: #ffe45c; color: #333;
+    border: 4px solid #333; border-radius: 16px;
+    padding: 16px 32px; font-size: 22px; font-weight: bold;
+    cursor: pointer; font-family: inherit;
+    box-shadow: 0 6px 0 #333;
+  }
+  #restartBtn:hover { transform: translateY(-2px); }
+
+  #modeBtns button.active {
+    outline: 4px solid #ff3d8a;
+    background: #ffe45c !important;
+    transform: scale(1.05);
+  }
+
   /* ===== TOUCH CONTROLS (visible only on touch devices) ===== */
   #touchUI { display: none; }
   body.touch #touchUI { display: block; }
@@ -297,6 +363,14 @@
     </div>
   </div>
 
+  <h2>🎮 Game Mode</h2>
+  <p>Pick how you want to play!</p>
+  <div class="btn-row" id="modeBtns">
+    <button data-mode="creative">🎨 Creative<br><span style="font-size:11px;font-weight:normal">fly free, no danger</span></button>
+    <button data-mode="survival">⚔️ Survival<br><span style="font-size:11px;font-weight:normal">hearts + respawn</span></button>
+    <button data-mode="hardcore">💀 Hardcore<br><span style="font-size:11px;font-weight:normal">ONE life only!</span></button>
+  </div>
+
   <h2>🛡️ Defend the Village</h2>
   <p>Find the 🔔 <b>gold bell</b> in the village and tap it to start a raid! Or use this button:</p>
   <div class="btn-row">
@@ -320,6 +394,16 @@
 <div id="biome">🏘️ Village</div>
 <div id="status"></div>
 <div id="raidCount" style="display:none"></div>
+<div id="hearts" style="display:none"></div>
+<div id="modeBadge">🎨 Creative</div>
+<div id="damageFlash"></div>
+<div id="gameOver" style="display:none">
+  <div class="go-card">
+    <h1>💀 GAME OVER 💀</h1>
+    <p>The pillagers got you in <b>Hardcore Mode</b>!</p>
+    <button id="restartBtn">🔄 Restart the Game</button>
+  </div>
+</div>
 <div id="hotbar"></div>
 
 <div id="touchUI">
@@ -1678,6 +1762,13 @@ function renderVillagerList() {
   });
 }
 
+document.querySelectorAll('#modeBtns button').forEach(b => {
+  b.onclick = (e) => {
+    e.stopPropagation();
+    setGameMode(b.dataset.mode);
+  };
+});
+
 document.getElementById('startRaidBtn').onclick = (e) => {
   e.stopPropagation();
   ringBell();
@@ -1833,6 +1924,102 @@ function defeatPillager(p) {
   }
 }
 
+// ===== GAME MODES (creative / survival / hardcore) =====
+const MAX_HP = 10;
+let gameMode = 'creative';
+let playerHP = MAX_HP;
+let lastDamageAt = 0;
+const DAMAGE_COOLDOWN_MS = 1200;
+
+function setGameMode(mode) {
+  gameMode = mode;
+  playerHP = MAX_HP;
+  const badge = document.getElementById('modeBadge');
+  const hearts = document.getElementById('hearts');
+  if (mode === 'creative') {
+    badge.textContent = '🎨 Creative';
+    badge.style.background = '#ffe45c';
+    hearts.style.display = 'none';
+  } else if (mode === 'survival') {
+    badge.textContent = '⚔️ Survival';
+    badge.style.background = '#7bd66b';
+    hearts.style.display = 'block';
+    updateHearts();
+  } else {
+    badge.textContent = '💀 Hardcore';
+    badge.style.background = '#ff3d8a';
+    badge.style.color = 'white';
+    hearts.style.display = 'block';
+    updateHearts();
+  }
+  // hide the gameOver overlay if it was up
+  document.getElementById('gameOver').style.display = 'none';
+  // un-mark mode buttons
+  document.querySelectorAll('#modeBtns button').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  showStatus(
+    mode === 'creative' ? '🎨 Creative Mode! Fly free, no danger!' :
+    mode === 'survival' ? '⚔️ Survival Mode! Watch out for pillagers!' :
+    '💀 HARDCORE! One life only — be careful!',
+    4000
+  );
+}
+
+function updateHearts() {
+  const el = document.getElementById('hearts');
+  let s = '';
+  for (let i = 0; i < MAX_HP; i++) s += i < playerHP ? '❤️' : '🖤';
+  el.textContent = s;
+}
+
+function damagePlayer(amount, attacker) {
+  if (gameMode === 'creative') return;
+  const now = performance.now();
+  if (now - lastDamageAt < DAMAGE_COOLDOWN_MS) return;
+  lastDamageAt = now;
+  playerHP = Math.max(0, playerHP - amount);
+  updateHearts();
+  const flash = document.getElementById('damageFlash');
+  flash.classList.add('show');
+  setTimeout(() => flash.classList.remove('show'), 120);
+  if (attacker) speakCharacter(attacker, 'GOT YOU! 😈');
+  if (playerHP <= 0) handleDeath();
+  else showStatus(`💥 Ouch! ${playerHP} hearts left!`, 1200);
+}
+
+function handleDeath() {
+  if (gameMode === 'hardcore') {
+    document.getElementById('gameOver').style.display = 'flex';
+    if (controls.isLocked) controls.unlock();
+  } else {
+    // survival respawn
+    playerHP = MAX_HP;
+    updateHearts();
+    controls.getObject().position.set(0, 5, 0);
+    showStatus('💖 You respawned at the village!', 3500);
+  }
+}
+
+document.getElementById('restartBtn').onclick = () => {
+  location.reload();
+};
+
+function checkPlayerDamage() {
+  if (gameMode === 'creative') return;
+  if (!raidActive || pillagers.length === 0) return;
+  const p = controls.getObject().position;
+  for (const pi of pillagers) {
+    const dx = pi.position.x - p.x;
+    const dz = pi.position.z - p.z;
+    const dy = pi.position.y - p.y;
+    if (Math.hypot(dx, dz) < 1.5 && Math.abs(dy) < 2.5) {
+      damagePlayer(1, pi);
+      return;
+    }
+  }
+}
+
 function tickPillagers(now, dt) {
   if (!raidActive) return;
   for (const p of pillagers) {
@@ -1929,6 +2116,8 @@ function update() {
   tickNPCs(now);
   // Pillagers walk toward the village when a raid is on
   tickPillagers(now, dt);
+  // Hurt the player if a pillager is right next to them (survival/hardcore)
+  checkPlayerDamage();
 
   // biome label
   const p = playerPos;
@@ -1970,6 +2159,12 @@ for (const c of allCharacters) {
 }
 
 renderVillagerList();
+
+// Default to creative mode and mark the creative button as active
+document.querySelectorAll('#modeBtns button').forEach(b => {
+  b.classList.toggle('active', b.dataset.mode === 'creative');
+});
+
 controls.getObject().position.set(0, 5, 0);
 update();
 </script>
