@@ -1,4 +1,9 @@
 {
+  "theme": "light",
+  "statusLine": {
+    "type": "command",
+    "command": "bash /Users/sitreps2steercos/Documents/GitHub/annies-game/.claude/statusline.sh"
+  },
   "permissions": {
     "deny": [
       "Bash(rm -rf:*)",
