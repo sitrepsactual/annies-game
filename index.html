@@ -183,6 +183,15 @@
   }
   #help b { color: #ffe45c; }
 
+  #raidCount {
+    position: fixed; top: 70px; right: 16px;
+    background: #ff3d8a; color: white;
+    padding: 8px 16px; border-radius: 14px;
+    font-size: 18px; font-weight: bold;
+    z-index: 55; border: 3px solid white;
+    box-shadow: 0 4px 0 #333;
+  }
+
   /* ===== TOUCH CONTROLS (visible only on touch devices) ===== */
   #touchUI { display: none; }
   body.touch #touchUI { display: block; }
@@ -288,6 +297,13 @@
     </div>
   </div>
 
+  <h2>🛡️ Defend the Village</h2>
+  <p>Find the 🔔 <b>gold bell</b> in the village and tap it to start a raid! Or use this button:</p>
+  <div class="btn-row">
+    <button id="startRaidBtn">🔔 Ring the Bell — Start Pillager Raid!</button>
+  </div>
+  <p style="font-size:13px;opacity:0.85">Pillagers will walk from their outpost toward the village. Tap each pillager to defeat them!</p>
+
   <h2>🧑 Your Villagers</h2>
   <p>Change their names and hat colors! Click "Add" to make more.</p>
   <div id="villagerList"></div>
@@ -303,6 +319,7 @@
 <div id="crosshair"></div>
 <div id="biome">🏘️ Village</div>
 <div id="status"></div>
+<div id="raidCount" style="display:none"></div>
 <div id="hotbar"></div>
 
 <div id="touchUI">
@@ -474,11 +491,14 @@ function makeNameLabel(text) {
   return sprite;
 }
 
-function makeCharacter(name, x, y, z, hatColor, bodyColor) {
+function makeCharacter(name, x, y, z, hatColor, bodyColor, opts) {
+  opts = opts || {};
+  const skinColor = opts.skinColor != null ? opts.skinColor : 0xffd9a8;
+  const eyeColor  = opts.eyeColor  != null ? opts.eyeColor  : 0x222222;
   const group = new THREE.Group();
   group.position.set(x, y, z);
 
-  const skin = new THREE.MeshLambertMaterial({ color: 0xffd9a8 });
+  const skin = new THREE.MeshLambertMaterial({ color: skinColor });
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), skin);
   head.position.y = 1.4;
   group.add(head);
@@ -509,7 +529,7 @@ function makeCharacter(name, x, y, z, hatColor, bodyColor) {
   hatTop.position.y = 2.05;
   group.add(hatTop);
 
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: eyeColor });
   const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.04), eyeMat);
   eyeL.position.set(-0.14, 1.45, 0.31);
   group.add(eyeL);
@@ -654,6 +674,200 @@ const BUDDY_HOME = { x: 5, y: 1, z: 16 };
 function spawnBuddy() {
   buddy = makeCharacter('Buddy', BUDDY_HOME.x, BUDDY_HOME.y, BUDDY_HOME.z, '#ffe45c', '#ff3d8a');
   buddy.userData.kind = 'buddy';
+}
+
+// ===== WEAPONS =====
+function addWeapon(group, color) {
+  const mat = new THREE.MeshLambertMaterial({ color: color != null ? color : 0xc0c0c0 });
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.7, 0.1), mat);
+  blade.position.set(0.5, 0.95, 0.25);
+  blade.rotation.z = -0.4;
+  group.add(blade);
+  const hilt = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12, 0.14), new THREE.MeshLambertMaterial({ color: 0x6b3f1c }));
+  hilt.position.set(0.42, 0.7, 0.25);
+  hilt.rotation.z = -0.4;
+  group.add(hilt);
+  group.userData.weapon = blade;
+}
+
+function addCrossbow(group) {
+  const wood = new THREE.MeshLambertMaterial({ color: 0x3a2a1c });
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.18, 0.12), wood);
+  stock.position.set(0.0, 0.95, 0.45);
+  group.add(stock);
+  const bow = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.08), wood);
+  bow.position.set(0.0, 0.95, 0.6);
+  group.add(bow);
+  group.userData.crossbow = stock;
+}
+
+// ===== PILLAGERS =====
+const pillagers = [];
+function spawnPillager(name, x, z) {
+  const g = makeCharacter(
+    name,
+    x, 1, z,
+    0x2a2a2a,  // black hat
+    0x555a66,  // dark grey-blue body
+    { skinColor: 0x9c9c9c, eyeColor: 0xff3333 }
+  );
+  g.userData.kind = 'pillager';
+  addCrossbow(g);
+  // angry eyebrows (small black blocks above eyes)
+  const browMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+  const browL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.04, 0.04), browMat);
+  browL.position.set(-0.14, 1.55, 0.31);
+  browL.rotation.z = -0.35;
+  g.add(browL);
+  const browR = browL.clone();
+  browR.position.x = 0.14;
+  browR.rotation.z = 0.35;
+  g.add(browR);
+  pillagers.push(g);
+  return g;
+}
+
+// ===== PILLAGER OUTPOST (in desert, far east) =====
+const OUTPOST = { x: 25, y: 1, z: -6 };
+function buildOutpost() {
+  const ox = OUTPOST.x, oz = OUTPOST.z;
+  // clear area
+  for (let dx = -5; dx <= 5; dx++)
+    for (let dz = -5; dz <= 5; dz++)
+      for (let y = 1; y < 16; y++)
+        blocks.delete(`${ox+dx},${y},${oz+dz}`);
+  // dark stone base
+  for (let dx = -3; dx <= 3; dx++)
+    for (let dz = -3; dz <= 3; dz++)
+      setBlock(ox+dx, 0, oz+dz, 'stone');
+  // Floor 1 walls (4x4 footprint, dark logs)
+  for (let y = 1; y <= 3; y++)
+    for (let dx = -2; dx <= 2; dx++)
+      for (let dz = -2; dz <= 2; dz++) {
+        const isEdge = dx === -2 || dx === 2 || dz === -2 || dz === 2;
+        if (isEdge && !(dx === 0 && dz === -2 && y < 3)) setBlock(ox+dx, y, oz+dz, 'log');
+      }
+  // ceiling 1
+  for (let dx = -2; dx <= 2; dx++)
+    for (let dz = -2; dz <= 2; dz++)
+      setBlock(ox+dx, 4, oz+dz, 'planks');
+  // Floor 2 walls (3x3)
+  for (let y = 5; y <= 7; y++)
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dz = -1; dz <= 1; dz++) {
+        const isEdge = dx === -1 || dx === 1 || dz === -1 || dz === 1;
+        if (isEdge) setBlock(ox+dx, y, oz+dz, 'log');
+      }
+  // ceiling 2
+  for (let dx = -2; dx <= 2; dx++)
+    for (let dz = -2; dz <= 2; dz++)
+      setBlock(ox+dx, 8, oz+dz, 'planks');
+  // Top floor walls (3x3, open windows)
+  for (let dx = -1; dx <= 1; dx++)
+    for (let dz = -1; dz <= 1; dz++) {
+      const isEdge = dx === -1 || dx === 1 || dz === -1 || dz === 1;
+      if (isEdge) setBlock(ox+dx, 9, oz+dz, 'log');
+    }
+  // banner pole + scary banner flag at top
+  setBlock(ox, 10, oz, 'log');
+  setBlock(ox, 11, oz, 'log');
+  setBlock(ox-1, 11, oz, 'brick');
+  setBlock(ox+1, 11, oz, 'brick');
+  setBlock(ox, 12, oz, 'brick');
+  // mini watchtowers
+  function watchtower(wx, wz) {
+    setBlock(wx, 1, wz, 'log');
+    setBlock(wx, 2, wz, 'log');
+    setBlock(wx, 3, wz, 'planks');
+    setBlock(wx-1, 3, wz, 'planks');
+    setBlock(wx+1, 3, wz, 'planks');
+    setBlock(wx, 3, wz-1, 'planks');
+    setBlock(wx, 3, wz+1, 'planks');
+  }
+  watchtower(ox-4, oz);
+  watchtower(ox+4, oz);
+  watchtower(ox, oz-4);
+  // cages: small log boxes
+  function cage(cx, cz) {
+    setBlock(cx, 1, cz, 'log');
+    setBlock(cx, 2, cz, 'log');
+    setBlock(cx+1, 1, cz, 'log');
+    setBlock(cx+1, 2, cz, 'log');
+    setBlock(cx, 1, cz+1, 'log');
+    setBlock(cx+1, 1, cz+1, 'log');
+  }
+  cage(ox-4, oz-3);
+  cage(ox+3, oz-3);
+}
+
+// ===== THE BELL (village center) =====
+const BELL_POS = { x: 0, y: 1, z: -3 };
+let bellMesh = null;
+function buildBell() {
+  const bx = BELL_POS.x, bz = BELL_POS.z;
+  // two stone posts holding up the bell
+  setBlock(bx - 1, 1, bz, 'stone');
+  setBlock(bx - 1, 2, bz, 'stone');
+  setBlock(bx + 1, 1, bz, 'stone');
+  setBlock(bx + 1, 2, bz, 'stone');
+  // crossbeam
+  setBlock(bx, 3, bz, 'log');
+  setBlock(bx - 1, 3, bz, 'log');
+  setBlock(bx + 1, 3, bz, 'log');
+  // gold roof above
+  setBlock(bx, 4, bz, 'gold');
+  setBlock(bx - 1, 4, bz, 'gold');
+  setBlock(bx + 1, 4, bz, 'gold');
+
+  // The bell itself is a separate clickable mesh (not in the block grid)
+  const g = new THREE.Group();
+  g.position.set(bx, 2.3, bz);
+  const top = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.2, 0.6),
+    new THREE.MeshLambertMaterial({ color: 0xffd54a })
+  );
+  top.position.y = 0.4;
+  g.add(top);
+  const main = new THREE.Mesh(
+    new THREE.BoxGeometry(0.9, 0.7, 0.9),
+    new THREE.MeshLambertMaterial({ color: 0xffd54a })
+  );
+  main.position.y = 0;
+  g.add(main);
+  const clapper = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.25, 0.15),
+    new THREE.MeshLambertMaterial({ color: 0x6b3f1c })
+  );
+  clapper.position.y = -0.45;
+  g.add(clapper);
+  g.userData = { kind: 'bell' };
+  scene.add(g);
+  bellMesh = g;
+}
+
+function ringBell() {
+  if (!bellMesh) return;
+  // wobble animation
+  bellMesh.userData.ringEnd = performance.now() + 1200;
+  showStatus('🔔 DING DONG! The bell rings! Pillagers are coming! 🛡️', 4000);
+  // sound via WebAudio - a simple bell-like tone
+  try {
+    const ac = ringBell._ac = ringBell._ac || new (window.AudioContext || window.webkitAudioContext)();
+    const now = ac.currentTime;
+    for (const f of [880, 1320]) {
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.3, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 1.5);
+      o.connect(g).connect(ac.destination);
+      o.start(now);
+      o.stop(now + 1.5);
+    }
+  } catch (_) {}
+  startRaid();
 }
 
 // ===== WORLD GENERATION =====
@@ -858,6 +1072,8 @@ function generateWorld() {
 
   buildArena();
   buildOcean();
+  buildOutpost();
+  buildBell();
 }
 
 function buildOcean() {
@@ -1152,31 +1368,39 @@ const raycaster = new THREE.Raycaster();
 raycaster.far = 8;
 const center = new THREE.Vector2(0, 0);
 
-// Click on a character = talk to them. Block placing/removing is on E and Q keys.
+// Click on a character = interact. Block placing/removing is on E and Q keys.
 renderer.domElement.addEventListener('mousedown', () => {
   if (!controls.isLocked) return;
-  raycaster.setFromCamera(center, camera);
-  const hits = raycaster.intersectObjects(allCharacters, true);
+  handleInteractClick();
+});
+
+function handleInteractClick() { handleInteractAt(center); }
+function handleInteractAt(ndc) {
+  raycaster.setFromCamera(ndc, camera);
+  const targets = allCharacters.slice();
+  if (bellMesh) targets.push(bellMesh);
+  const hits = raycaster.intersectObjects(targets, true);
   if (!hits.length) return;
   let o = hits[0].object;
-  let charGroup = null;
+  let group = null;
   while (o) {
-    if (o.userData && (o.userData.kind === 'villager' || o.userData.kind === 'buddy')) {
-      charGroup = o; break;
-    }
+    if (o.userData && o.userData.kind) { group = o; break; }
     o = o.parent;
   }
-  if (!charGroup) return;
-  speakCharacter(charGroup, pickPhrase(charGroup.userData.name));
-  if (charGroup.userData.kind === 'villager') {
-    const idx = VILLAGER_COLORS.indexOf(charGroup.userData.hatColor);
+  if (!group) return;
+  const k = group.userData.kind;
+  if (k === 'bell') { ringBell(); return; }
+  if (k === 'pillager') { defeatPillager(group); return; }
+  speakCharacter(group, pickPhrase(group.userData.name));
+  if (k === 'villager') {
+    const idx = VILLAGER_COLORS.indexOf(group.userData.hatColor);
     const next = VILLAGER_COLORS[(idx + 1) % VILLAGER_COLORS.length] || VILLAGER_COLORS[0];
-    setCharacterHatColor(charGroup, next);
-  } else if (charGroup.userData.kind === 'buddy') {
+    setCharacterHatColor(group, next);
+  } else if (k === 'buddy') {
     buddy.userData.armR.rotation.x = -0.5;
     setTimeout(() => buddy && (buddy.userData.armR.rotation.x = 0), 600);
   }
-});
+}
 addEventListener('contextmenu', e => e.preventDefault());
 
 function tryPlaceBlock() {
@@ -1348,33 +1572,14 @@ addEventListener('touchend', e => {
   for (const t of e.changedTouches) {
     if (t.identifier !== lookState.id) continue;
     const dur = performance.now() - lookState.startTime;
-    // tap (no move, fast) => character interaction
+    // tap (no move, fast) => character/bell/pillager interaction
     if (!lookState.moved && dur < TAP_THRESHOLD_MS) {
       const rect = renderer.domElement.getBoundingClientRect();
       const ndc = new THREE.Vector2(
         ((t.clientX - rect.left) / rect.width) * 2 - 1,
         -((t.clientY - rect.top) / rect.height) * 2 + 1
       );
-      raycaster.setFromCamera(ndc, camera);
-      const hits = raycaster.intersectObjects(allCharacters, true);
-      if (hits.length) {
-        let o = hits[0].object, charGroup = null;
-        while (o) {
-          if (o.userData && (o.userData.kind === 'villager' || o.userData.kind === 'buddy')) { charGroup = o; break; }
-          o = o.parent;
-        }
-        if (charGroup) {
-          speakCharacter(charGroup, pickPhrase(charGroup.userData.name));
-          if (charGroup.userData.kind === 'villager') {
-            const idx = VILLAGER_COLORS.indexOf(charGroup.userData.hatColor);
-            const next = VILLAGER_COLORS[(idx + 1) % VILLAGER_COLORS.length] || VILLAGER_COLORS[0];
-            setCharacterHatColor(charGroup, next);
-          } else if (charGroup.userData.kind === 'buddy') {
-            buddy.userData.armR.rotation.x = -0.5;
-            setTimeout(() => buddy && (buddy.userData.armR.rotation.x = 0), 600);
-          }
-        }
-      }
+      handleInteractAt(ndc);
     }
     lookState.active = false;
     lookState.id = null;
@@ -1473,6 +1678,13 @@ function renderVillagerList() {
   });
 }
 
+document.getElementById('startRaidBtn').onclick = (e) => {
+  e.stopPropagation();
+  ringBell();
+  if (touchMode) overlay.style.display = 'none';
+  else controls.lock();
+};
+
 document.getElementById('addVillagerBtn').onclick = () => {
   // place at a random village spot
   let x, z, tries = 0;
@@ -1558,6 +1770,96 @@ function npcWander(c) {
   }
 }
 
+// ===== RAID / PILLAGER COMBAT =====
+let raidActive = false;
+let raidStartTime = 0;
+function startRaid() {
+  // clear existing pillagers
+  for (const p of pillagers) {
+    scene.remove(p);
+    const ai = allCharacters.indexOf(p);
+    if (ai >= 0) allCharacters.splice(ai, 1);
+  }
+  pillagers.length = 0;
+  // spawn 5 pillagers from the outpost
+  const names = ['Grumpus', 'Snarl', 'Brutus', 'Vex', 'Gnash'];
+  for (let i = 0; i < names.length; i++) {
+    const offX = (i - 2) * 1.5;
+    spawnPillager(names[i], OUTPOST.x + offX, OUTPOST.z + 2);
+  }
+  raidActive = true;
+  raidStartTime = performance.now();
+  updateRaidCount();
+}
+
+function updateRaidCount() {
+  const el = document.getElementById('raidCount');
+  if (!el) return;
+  if (!raidActive || pillagers.length === 0) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  el.textContent = `⚔️ Pillagers left: ${pillagers.length}`;
+}
+
+function defeatPillager(p) {
+  // remove from arrays
+  scene.remove(p);
+  const ai = allCharacters.indexOf(p);
+  if (ai >= 0) allCharacters.splice(ai, 1);
+  const pi = pillagers.indexOf(p);
+  if (pi >= 0) pillagers.splice(pi, 1);
+  // little poof of flower blocks where it stood
+  showStatus(`💥 Defeated ${p.userData.name}!`, 1500);
+  updateRaidCount();
+  if (raidActive && pillagers.length === 0) {
+    raidActive = false;
+    showStatus("🏆 VICTORY! You saved the village from the pillagers! 🎉", 7000);
+    try {
+      const ac = ringBell._ac = ringBell._ac || new (window.AudioContext || window.webkitAudioContext)();
+      const now = ac.currentTime;
+      for (const f of [523, 659, 784, 1047]) {
+        const o = ac.createOscillator(); const g = ac.createGain();
+        o.type = 'triangle'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
+        o.connect(g).connect(ac.destination);
+        const start = now + (f - 523) / 400;
+        o.start(start); o.stop(start + 0.8);
+      }
+    } catch (_) {}
+  }
+}
+
+function tickPillagers(now, dt) {
+  if (!raidActive) return;
+  for (const p of pillagers) {
+    // walk toward village center (0, 0)
+    const dx = 0 - p.position.x;
+    const dz = 0 - p.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > 1) {
+      const speed = 1.2 * dt;
+      p.position.x += (dx / dist) * speed;
+      p.position.z += (dz / dist) * speed;
+    } else {
+      // arrived at village - taunt
+      if (Math.random() < 0.01) speakCharacter(p, 'PILLAGE! 😠');
+    }
+  }
+  // little bell wobble animation when ringing
+  if (bellMesh && bellMesh.userData.ringEnd) {
+    if (now < bellMesh.userData.ringEnd) {
+      bellMesh.rotation.z = Math.sin(now * 0.04) * 0.25;
+    } else {
+      bellMesh.rotation.z = 0;
+      bellMesh.userData.ringEnd = 0;
+    }
+  }
+}
+
 function tickNPCs(now) {
   for (const c of allCharacters) {
     if (!c.userData.npc) continue;
@@ -1625,6 +1927,8 @@ function update() {
 
   // NPCs build and break and wander on their own
   tickNPCs(now);
+  // Pillagers walk toward the village when a raid is on
+  tickPillagers(now, dt);
 
   // biome label
   const p = playerPos;
@@ -1659,8 +1963,11 @@ spawnVillager( 0, -5, 'Daisy','#b06aff');
 // Spawn Buddy in arena
 spawnBuddy();
 
-// give every character autonomous build/break behavior
-for (const c of allCharacters) initNPC(c);
+// give every character autonomous build/break behavior + weapons
+for (const c of allCharacters) {
+  initNPC(c);
+  addWeapon(c, c.userData.kind === 'buddy' ? 0xffd54a : 0xc0c0c0);
+}
 
 renderVillagerList();
 controls.getObject().position.set(0, 5, 0);
