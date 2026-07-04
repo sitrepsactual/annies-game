@@ -81,6 +81,32 @@ When you defeat them ALL, you saved the village! 🏆🎉
 
 ---
 
+## 🔥 The Nether Portal!
+
+There's a spooky-cool **obsidian portal frame** standing in the village! 🟪
+
+1. Open your blocks and pick **🔥 Flint & Steel** (it's a special tool, not a block!)
+2. Look at the obsidian frame and press **E** (or tap **BUILD** on iPad).
+3. **WHOOSH!** — the middle glows purple. Step inside! 🌀
+
+You'll travel to **THE NETHER** — a toasty red world with lava, glowing pillars, and floppy-eared **piglins**! 🐷
+
+You can also build your OWN obsidian frame anywhere and light it up. Just make a full ring of obsidian and light the inside!
+
+### 🐷 Meet the Piglins
+
+| Piglin | |
+|--------|---|
+| 🐷 **Snorty** | Snort snort! |
+| 🐖 **Hammy** | Loves gold! |
+| 🐽 **Trotter** | So toasty! |
+| 🐷 **Porkchop** | Oink oink! |
+
+They LOVE gold and love to trade. **Click them to make them talk!** 💬
+When you want to go home, find the purple portal in the Nether and step in! 🏠
+
+---
+
 ## 🎮 Game Modes
 
 Pick how you want to play! (Open the menu with ESC)
@@ -113,6 +139,7 @@ Pick how you want to play! (Open the menu with ESC)
 - 🏝️ **Treasure Islands** — In the ocean! Some have **GOLD!** 💰
 - 🏛️ **Desert Pyramid** — Climb to the top for treasure!
 - ⛰️ **Mountain Peaks** — Gold blocks on top of the highest mountains!
+- 🔥 **The Nether** — Light the obsidian portal in the village to visit! Lava, piglins, and glowing pillars!
 
 ---
 

@@ -336,7 +336,11 @@
     <button data-tp="mountains">⛰️ Mountains</button>
     <button data-tp="ocean">🌊 Ocean</button>
     <button data-tp="arena">🏟️ Build Arena!</button>
+    <button data-tp="nether">🔥 The Nether</button>
   </div>
+
+  <h2>🔥 The Nether Portal</h2>
+  <p>There's an <b>obsidian portal frame</b> in the village! Pick <b>🔥 Flint &amp; Steel</b> from your blocks and press <b>E</b> (or the BUILD button) while looking at it to light it up. Then step inside to visit the <b>Nether</b> and meet the friendly gold-loving <b>piglins</b>! 🐷</p>
 
   <h2>🏟️ Build Battle with Buddy</h2>
   <p>Pick a challenge! Buddy builds on the <b>ICE pad</b>, you build on the <b>RED pad</b>!</p>
@@ -431,6 +435,7 @@
   <b>SPACE</b> fly up &nbsp; <b>SHIFT</b> down<br>
   <b>E</b> build 🧱 &nbsp; <b>Q</b> break 💥<br>
   <b>1-9</b> pick block<br>
+  <b>🔥 Flint &amp; Steel</b> + E = light a portal<br>
   <b>Click</b> talk to friends 💬<br>
   <b>ESC</b> menu / arena
 </div>
@@ -514,8 +519,15 @@ const BLOCK_TYPES = {
   flower: { color: 0xff77aa, label: 'Flower' },
   water:  { color: 0x3d72e8, label: 'Water',  opacity: 0.65 },
   gold:   { color: 0xffd54a, label: 'Gold!' },
+  obsidian:  { color: 0x2b1a4a, label: 'Obsidian' },
+  netherrack:{ color: 0x6e2b2b, label: 'Netherrack' },
+  lava:      { color: 0xff6a00, label: 'Lava' },
+  // Portal blocks are made by lighting an obsidian frame — not placed by hand
+  portal:    { color: 0xa14bd6, label: 'Portal', opacity: 0.6, noHotbar: true },
+  // Flint & Steel is a TOOL, not a block: select it and press BUILD on obsidian to light a portal
+  flint_steel: { color: 0xd08a2e, label: '🔥 Flint & Steel', tool: true },
 };
-const BLOCK_LIST = Object.keys(BLOCK_TYPES);
+const BLOCK_LIST = Object.keys(BLOCK_TYPES).filter(t => !BLOCK_TYPES[t].noHotbar);
 let currentBlock = 'grass';
 
 const blocks = new Map();
@@ -1254,6 +1266,10 @@ function generateWorld() {
   buildBell();
   buildTinyHouse(-13, 1, -2);
   buildMansion(11, 1, -5);
+
+  // Nether dimension + an (unlit) obsidian portal frame in the village to light with Flint & Steel
+  buildNether();
+  buildPortalFrame(4, 1, 6, false);
 }
 
 function buildOcean() {
@@ -1571,6 +1587,12 @@ function handleInteractAt(ndc) {
   const k = group.userData.kind;
   if (k === 'bell') { ringBell(); return; }
   if (k === 'pillager') { defeatPillager(group); return; }
+  if (k === 'piglin') {
+    speakCharacter(group, PIGLIN_PHRASES[Math.floor(Math.random() * PIGLIN_PHRASES.length)]);
+    group.userData.armR.rotation.x = -0.6;
+    setTimeout(() => group && (group.userData.armR.rotation.x = 0), 500);
+    return;
+  }
   speakCharacter(group, pickPhrase(group.userData.name));
   if (k === 'villager') {
     const idx = VILLAGER_COLORS.indexOf(group.userData.hatColor);
@@ -1584,7 +1606,12 @@ function handleInteractAt(ndc) {
 addEventListener('contextmenu', e => e.preventDefault());
 
 function tryPlaceBlock() {
-  if (!controls.isLocked) return;
+  if (!controls.isLocked && !touchMode) return;
+  // Flint & Steel is a tool: it lights portals instead of placing a block
+  if (BLOCK_TYPES[currentBlock] && BLOCK_TYPES[currentBlock].tool) {
+    if (currentBlock === 'flint_steel') lightPortal();
+    return;
+  }
   raycaster.setFromCamera(center, camera);
   const hits = raycaster.intersectObjects(Object.values(meshes));
   if (!hits.length) return;
@@ -1602,7 +1629,7 @@ function tryPlaceBlock() {
 }
 
 function tryRemoveBlock() {
-  if (!controls.isLocked) return;
+  if (!controls.isLocked && !touchMode) return;
   raycaster.setFromCamera(center, camera);
   const hits = raycaster.intersectObjects(Object.values(meshes));
   if (!hits.length) return;
@@ -1610,8 +1637,221 @@ function tryRemoveBlock() {
   const mat = new THREE.Matrix4();
   h.object.getMatrixAt(h.instanceId, mat);
   const pos = new THREE.Vector3().setFromMatrixPosition(mat);
-  setBlock(Math.round(pos.x), Math.round(pos.y), Math.round(pos.z), null);
+  const rx = Math.round(pos.x), ry = Math.round(pos.y), rz = Math.round(pos.z);
+  const key = `${rx},${ry},${rz}`;
+  if (blocks.get(key) === 'portal') { owPortalCells.delete(key); netherPortalCells.delete(key); }
+  setBlock(rx, ry, rz, null);
   rebuildMeshes();
+}
+
+// ===== THE NETHER (obsidian portals, dimensions, piglins) =====
+const NETHER = { cx: 120, cz: 120 };      // Nether lives far away in its own corner
+const NETHER_SPAWN = [119.5, 2, 117];     // where you land in the Nether
+const OW_RETURN    = [5.5, 3, 4];         // where you land back home
+let dimension = 'overworld';
+let portalCooldownUntil = 0;
+const owPortalCells = new Set();          // lit portals in the Overworld -> go to Nether
+const netherPortalCells = new Set();      // lit portals in the Nether -> come home
+
+function setOverworldSky() {
+  scene.background.setHex(0x87ceeb);
+  scene.fog.color.setHex(0x87ceeb);
+  scene.fog.near = 45; scene.fog.far = 130;
+}
+function setNetherSky() {
+  scene.background.setHex(0x3a0d0d);
+  scene.fog.color.setHex(0x611414);
+  scene.fog.near = 18; scene.fog.far = 78;
+}
+
+function portalWhoosh() {
+  try {
+    const ac = ringBell._ac = ringBell._ac || new (window.AudioContext || window.webkitAudioContext)();
+    const now = ac.currentTime;
+    const o = ac.createOscillator(); const g = ac.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(120, now);
+    o.frequency.exponentialRampToValueAtTime(600, now + 0.5);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.2, now + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+    o.connect(g).connect(ac.destination);
+    o.start(now); o.stop(now + 0.6);
+  } catch (_) {}
+}
+
+function enterNether() {
+  dimension = 'nether';
+  setNetherSky();
+  controls.getObject().position.set(NETHER_SPAWN[0], NETHER_SPAWN[1], NETHER_SPAWN[2]);
+  portalCooldownUntil = performance.now() + 1500;
+  portalWhoosh();
+  showStatus('🔥 WHOOOSH! Welcome to THE NETHER! Find the purple portal to go home. 🔥', 5000);
+}
+function returnOverworld() {
+  dimension = 'overworld';
+  setOverworldSky();
+  controls.getObject().position.set(OW_RETURN[0], OW_RETURN[1], OW_RETURN[2]);
+  portalCooldownUntil = performance.now() + 1500;
+  portalWhoosh();
+  showStatus('🏠 WHOOOSH! You came back home to the Overworld! 🌈', 4500);
+}
+
+// --- Flint & Steel: light an obsidian frame ---
+function lightPortal() {
+  raycaster.setFromCamera(center, camera);
+  const hits = raycaster.intersectObjects(Object.values(meshes));
+  if (!hits.length) { showStatus('🔥 Point at an OBSIDIAN frame, then use Flint & Steel!', 3500); return; }
+  const h = hits[0];
+  const mat = new THREE.Matrix4();
+  h.object.getMatrixAt(h.instanceId, mat);
+  const pos = new THREE.Vector3().setFromMatrixPosition(mat);
+  const ox = Math.round(pos.x), oy = Math.round(pos.y), oz = Math.round(pos.z);
+  if (blocks.get(`${ox},${oy},${oz}`) !== 'obsidian') {
+    showStatus('🔥 Flint & Steel only lights OBSIDIAN! Build a frame first. 🟪', 3500);
+    return;
+  }
+  // Try both frame orientations; light the enclosed air pocket if we find one.
+  for (const plane of ['x', 'z']) {
+    const seeds = plane === 'x'
+      ? [[ox - 1, oy, oz], [ox + 1, oy, oz], [ox, oy + 1, oz]]
+      : [[ox, oy, oz - 1], [ox, oy, oz + 1], [ox, oy + 1, oz]];
+    for (const s of seeds) {
+      const region = floodPortal(s[0], s[1], s[2], plane);
+      if (region) { ignitePortal(region); return; }
+    }
+  }
+  showStatus('🔥 That frame is not closed. Make a full obsidian ring, then light inside! 🟪', 4000);
+}
+
+// Flood-fill the air pocket inside a frame (stays in one vertical plane, bounded by obsidian).
+function floodPortal(sx, sy, sz, plane) {
+  if (blocks.has(`${sx},${sy},${sz}`)) return null;   // seed must be empty (inside the frame)
+  const region = new Set();
+  const queue = [[sx, sy, sz]];
+  const MAX = 24;                                     // bigger than this = open air, not a frame
+  while (queue.length) {
+    const [x, y, z] = queue.shift();
+    if (y < 1) return null;                           // don't reach into the ground
+    const key = `${x},${y},${z}`;
+    if (region.has(key)) continue;
+    region.add(key);
+    if (region.size > MAX) return null;               // leaked out — not a real frame
+    const nbrs = plane === 'x'
+      ? [[x - 1, y, z], [x + 1, y, z], [x, y - 1, z], [x, y + 1, z]]
+      : [[x, y, z - 1], [x, y, z + 1], [x, y - 1, z], [x, y + 1, z]];
+    for (const [nx, ny, nz] of nbrs) {
+      const t = blocks.get(`${nx},${ny},${nz}`);
+      if (t === 'obsidian' || t === 'portal') continue; // frame edge — good
+      if (t === undefined) queue.push([nx, ny, nz]);    // more interior air
+      else return null;                                 // another block breaks the frame
+    }
+  }
+  return region.size ? [...region].map(k => k.split(',').map(Number)) : null;
+}
+
+function ignitePortal(cells) {
+  const set = dimension === 'nether' ? netherPortalCells : owPortalCells;
+  for (const [x, y, z] of cells) {
+    setBlock(x, y, z, 'portal');
+    set.add(`${x},${y},${z}`);
+  }
+  rebuildMeshes();
+  portalWhoosh();
+  showStatus(dimension === 'nether'
+    ? '🟪🔥 Portal lit! Step inside to go back home! 🔥🟪'
+    : '🟪🔥 The portal is ALIVE! Step inside to visit the Nether! 🔥🟪', 5000);
+}
+
+// Build a 4-wide x 5-tall obsidian portal frame in the z-plane (interior 2x3).
+function buildPortalFrame(x0, y0, z, lit, targetSet) {
+  for (let dx = 0; dx < 4; dx++) {
+    setBlock(x0 + dx, y0, z, 'obsidian');       // bottom
+    setBlock(x0 + dx, y0 + 4, z, 'obsidian');   // top
+  }
+  for (let dy = 1; dy <= 3; dy++) {
+    setBlock(x0, y0 + dy, z, 'obsidian');       // left column
+    setBlock(x0 + 3, y0 + dy, z, 'obsidian');   // right column
+  }
+  for (let dx = 1; dx <= 2; dx++)
+    for (let dy = 1; dy <= 3; dy++) {
+      const k = `${x0 + dx},${y0 + dy},${z}`;
+      if (lit) { setBlock(x0 + dx, y0 + dy, z, 'portal'); if (targetSet) targetSet.add(k); }
+      else blocks.delete(k);                    // leave it as air so Annie can light it
+    }
+}
+
+function buildNether() {
+  const { cx, cz } = NETHER;
+  // netherrack floor
+  for (let x = cx - 12; x <= cx + 12; x++)
+    for (let z = cz - 12; z <= cz + 12; z++)
+      setBlock(x, 0, z, 'netherrack');
+  // bubbling lava pools
+  for (const [lx, lz] of [[cx - 7, cz - 6], [cx + 6, cz + 5], [cx - 2, cz + 8]])
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dz = -1; dz <= 1; dz++)
+        setBlock(lx + dx, 0, lz + dz, 'lava');
+  // glowing pillars (gold cap = glowstone-ish light)
+  for (const [px, pz, ph] of [[cx - 9, cz - 9, 4], [cx + 9, cz - 8, 5], [cx - 8, cz + 9, 3], [cx + 9, cz + 9, 4]]) {
+    for (let y = 1; y <= ph; y++) setBlock(px, y, pz, 'netherrack');
+    setBlock(px, ph + 1, pz, 'gold');
+  }
+  // a little obsidian ledge
+  for (let x = cx - 3; x <= cx + 3; x++) setBlock(x, 1, cz + 10, 'obsidian');
+  // the return portal — pre-lit so you can ALWAYS get home
+  buildPortalFrame(cx - 2, 1, cz - 5, true, netherPortalCells);
+}
+
+// ===== PIGLINS (friendly, gold-loving Nether pigs) =====
+const piglins = [];
+const PIGLIN_PHRASES = [
+  'OINK! Got any GOLD? 🐷', 'Snort snort! 🐽', 'I LOVE gold blocks!',
+  'This place is TOASTY! 🔥', 'Oink oink — wanna trade?', 'Nice hat! Is it gold?',
+  'Squeee! 🐖', 'Gold gold gold! ✨',
+];
+function spawnPiglin(x, z, name) {
+  const g = makeCharacter(name, x, 1, z,
+    0xffc04d,   // gold-ish hat
+    0x8a5a2b,   // brown tunic
+    { skinColor: 0xf2a6b8, eyeColor: 0x3a1f1f });   // piggy-pink skin
+  g.userData.kind = 'piglin';
+  const snoutMat = new THREE.MeshLambertMaterial({ color: 0xe98aa0 });
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.12), snoutMat);
+  snout.position.set(0, 1.34, 0.33);
+  g.add(snout);
+  const nMat = new THREE.MeshBasicMaterial({ color: 0x5a2f3a });
+  const nL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.04), nMat);
+  nL.position.set(-0.06, 1.34, 0.4); g.add(nL);
+  const nR = nL.clone(); nR.position.x = 0.06; g.add(nR);
+  const earMat = new THREE.MeshLambertMaterial({ color: 0xf2a6b8 });
+  const earL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.2, 0.06), earMat);
+  earL.position.set(-0.3, 1.62, 0); earL.rotation.z = 0.5; g.add(earL);
+  const earR = earL.clone(); earR.position.x = 0.3; earR.rotation.z = -0.5; g.add(earR);
+  addWeapon(g, 0xffd54a);   // they carry a shiny gold sword
+  g.userData.wander = { next: performance.now() + 1000 + Math.random() * 3000 };
+  piglins.push(g);
+  return g;
+}
+function populateNether() {
+  const { cx, cz } = NETHER;
+  spawnPiglin(cx - 4, cz + 2, 'Snorty');
+  spawnPiglin(cx + 3, cz - 2, 'Hammy');
+  spawnPiglin(cx + 5, cz + 4, 'Trotter');
+  spawnPiglin(cx - 6, cz - 3, 'Porkchop');
+}
+function tickPiglins(now) {
+  for (const p of piglins) {
+    const w = p.userData.wander;
+    if (now < w.next) continue;
+    w.next = now + 1500 + Math.random() * 3000;
+    const nx = p.position.x + (Math.floor(Math.random() * 3) - 1);
+    const nz = p.position.z + (Math.floor(Math.random() * 3) - 1);
+    if (Math.abs(nx - NETHER.cx) <= 11 && Math.abs(nz - NETHER.cz) <= 11) {
+      p.position.x = nx; p.position.z = nz;
+    }
+    if (Math.random() < 0.25) speakCharacter(p, PIGLIN_PHRASES[Math.floor(Math.random() * PIGLIN_PHRASES.length)]);
+  }
 }
 
 let lastBuildAction = 0;
@@ -1785,9 +2025,16 @@ const tps = {
 document.querySelectorAll('#teleports button').forEach(b => {
   b.onclick = (e) => {
     e.stopPropagation();
-    const t = tps[b.dataset.tp];
-    if (t) controls.getObject().position.set(t[0], t[1], t[2]);
-    controls.lock();
+    if (b.dataset.tp === 'nether') {
+      enterNether();
+    } else {
+      dimension = 'overworld';
+      setOverworldSky();
+      const t = tps[b.dataset.tp];
+      if (t) controls.getObject().position.set(t[0], t[1], t[2]);
+    }
+    if (touchMode) overlay.style.display = 'none';
+    else controls.lock();
   };
 });
 
@@ -2235,15 +2482,25 @@ function update() {
   tickNPCs(now);
   // Pillagers walk toward the village when a raid is on
   tickPillagers(now, dt);
+  // Piglins snuffle around the Nether
+  tickPiglins(now);
   // Hurt the player if a pillager is right next to them (survival/hardcore)
   checkPlayerDamage();
+
+  // Step into a lit portal to switch dimensions
+  if (now > portalCooldownUntil) {
+    const pk = `${Math.round(playerPos.x)},${Math.round(playerPos.y)},${Math.round(playerPos.z)}`;
+    if (dimension === 'overworld' && owPortalCells.has(pk)) enterNether();
+    else if (dimension === 'nether' && netherPortalCells.has(pk)) returnOverworld();
+  }
 
   // biome label
   const p = playerPos;
   const inArena = p.x >= ARENA.minX && p.x <= ARENA.maxX && p.z >= ARENA.minZ && p.z <= ARENA.maxZ;
   const inVillage = Math.abs(p.x) <= 8 && Math.abs(p.z) <= 8;
   let biome;
-  if (inArena) biome = '🏟️ Build Arena';
+  if (dimension === 'nether') biome = '🔥 The Nether';
+  else if (inArena) biome = '🏟️ Build Arena';
   else if (inVillage) biome = '🏘️ Village';
   else if (p.z < -30) biome = '🌊 Ocean';
   else if (p.x < 0 && p.z > 0) biome = '❄️ Snowy Place';
@@ -2276,6 +2533,9 @@ for (const c of allCharacters) {
   initNPC(c);
   addWeapon(c, c.userData.kind === 'buddy' ? 0xffd54a : 0xc0c0c0);
 }
+
+// Piglins come after, so they keep their own gold sword + wander (not villager behavior)
+populateNether();
 
 renderVillagerList();
 
